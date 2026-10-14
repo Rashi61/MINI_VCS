@@ -5,6 +5,7 @@
 
 #include "FileManager.h"
 #include "Repository.h"
+#include "HashManager.h"
 
 int main(int argc, char* argv[]) {
     if (argc < 2) {
@@ -14,6 +15,7 @@ int main(int argc, char* argv[]) {
         std::cout << "  minivcs add <file>\n";
         std::cout << "  minivcs remove <file>\n";
         std::cout << "  minivcs tracked\n";
+        std::cout << "  minivcs hash <file>\n";
         return 0;
     }
 
@@ -43,6 +45,25 @@ int main(int argc, char* argv[]) {
 
         std::cerr << "Failed to initialize repository.\n";
         return 1;
+    }
+
+    
+    if (command == "hash") {
+        if (argc != 3) {
+            std::cerr << "Usage: minivcs hash <file>\n";
+            return 1;
+        }
+
+        const std::string hash =
+            HashManager::calculateHash(argv[2]);
+
+        if (hash.empty()) {
+            std::cerr << "Could not calculate file hash.\n";
+            return 1;
+        }
+
+        std::cout << "SHA-256: " << hash << '\n';
+        return 0;
     }
 
     Repository repository(std::filesystem::current_path());
