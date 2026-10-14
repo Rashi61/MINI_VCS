@@ -274,6 +274,8 @@ MINI_VCS/
 │   ├── Commit.cpp
 │   ├── CommitManager.cpp
 │   ├── HashManager.cpp
+|   ├── RetentionManager.cpp
+|   ├── RemoteManager.cpp
 │   └── BranchManager.cpp
 │
 ├── include/
@@ -282,6 +284,8 @@ MINI_VCS/
 │   ├── Commit.h
 │   ├── CommitManager.h
 │   ├── HashManager.h
+|   ├── RetentionManager.h
+|   ├── RemoteManager.h
 │   └── BranchManager.h
 │
 ├── frontend/
