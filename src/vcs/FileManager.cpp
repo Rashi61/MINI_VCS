@@ -35,7 +35,7 @@ bool normalizeRelativePath(
     }
 
     auto first = path.begin();
-    if (first != path.end() && *first == ".minigit") {
+    if (first != path.end() && *first == ".minivcs") {
         return false;
     }
 
@@ -51,7 +51,7 @@ FileManager::FileManager(
     repositoryRoot =
         std::filesystem::absolute(rootPath).lexically_normal();
 
-    metadataPath = repositoryRoot / ".minigit";
+    metadataPath = repositoryRoot / ".minivcs";
     trackedFilesPath = metadataPath / "tracked.txt";
 }
 
