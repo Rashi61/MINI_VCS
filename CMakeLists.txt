@@ -14,6 +14,8 @@ add_executable(minivcs
     src/repository/Repository.cpp
     src/vcs/FileManager.cpp
     src/security/HashManager.cpp
+    src/vcs/commit.cpp
+    src/vcs/CommitManager.cpp
 )
 
 target_include_directories(minivcs PRIVATE include)
