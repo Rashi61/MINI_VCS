@@ -75,15 +75,13 @@ bool Repository::init() const {
 
     const auto metadata = getMetadataPath();
 
-    // Never overwrite an existing repository.
     if (std::filesystem::exists(metadata, ec) || ec) {
         return false;
     }
 
-    // Create the internal storage directories.
     std::filesystem::create_directories(
         metadata / "objects", ec);
-
+        
     if (ec) {
         return false;
     }
@@ -95,33 +93,23 @@ bool Repository::init() const {
         return false;
     }
 
-    // Store the repository format.
     std::ofstream config(metadata / "config");
-
     if (!config) {
         return false;
     }
-
     config << "repository_format=1\n";
     config.close();
-
     if (!config) {
         return false;
     }
-
-    // Record the initially selected branch name.
     std::ofstream head(metadata / "HEAD");
-
     if (!head) {
         return false;
     }
-
     head << "main\n";
     head.close();
-
     if (!head) {
         return false;
     }
-
     return isInitialized();
 }
