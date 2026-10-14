@@ -7,8 +7,6 @@
 
 namespace {
 
-// Convert a valid project-relative path to a consistent form.
-// Reject absolute paths, paths escaping the repository, and .minigit.
 bool normalizeRelativePath(
     const std::string& input,
     std::string& normalized
@@ -36,7 +34,6 @@ bool normalizeRelativePath(
         }
     }
 
-    // Never allow users to track MiniVCS's own internal metadata.
     auto first = path.begin();
     if (first != path.end() && *first == ".minigit") {
         return false;
@@ -46,7 +43,7 @@ bool normalizeRelativePath(
     return !normalized.empty();
 }
 
-} // namespace
+} 
 
 FileManager::FileManager(
     const std::filesystem::path& rootPath
@@ -69,8 +66,6 @@ bool FileManager::loadTrackedFiles(
         return false;
     }
 
-    // A new repository has no tracked.txt yet.
-    // Treat that as an empty tracking list.
     if (!std::filesystem::exists(trackedFilesPath, ec)) {
         return !ec;
     }
@@ -157,7 +152,6 @@ bool FileManager::saveTrackedFiles(
     }
 
     if (hadOriginal) {
-        // Remove a stale backup before creating a fresh one.
         std::filesystem::remove(backupPath, ec);
 
         if (ec) {
@@ -181,7 +175,6 @@ bool FileManager::saveTrackedFiles(
     );
 
     if (ec) {
-        // Try to restore the old list if the replacement failed.
         if (hadOriginal) {
             std::error_code restoreError;
             std::filesystem::rename(
@@ -223,7 +216,7 @@ bool FileManager::addFile(const std::string& relativePath) {
 
     if (std::find(files.begin(), files.end(), normalized)
         != files.end()) {
-        return true; // Already tracked; no duplicate entry needed.
+        return true;
     }
 
     files.push_back(normalized);
@@ -252,7 +245,7 @@ bool FileManager::removeFile(const std::string& relativePath) {
     );
 
     if (files.size() == oldSize) {
-        return false; // The file wasn't being tracked.
+        return false; 
     }
 
     return saveTrackedFiles(files);
