@@ -7,10 +7,14 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+find_package(OpenSSL REQUIRED COMPONENTS Crypto)
+
 add_executable(minivcs
     src/main.cpp
     src/repository/Repository.cpp
     src/vcs/FileManager.cpp
+    src/security/HashManager.cpp
 )
 
 target_include_directories(minivcs PRIVATE include)
+target_link_libraries(minivcs PRIVATE OpenSSL::Crypto)
