@@ -11,7 +11,7 @@ find_package(OpenSSL REQUIRED COMPONENTS Crypto)
 
 add_executable(minivcs
     src/main.cpp
-    src/repository/Repository.cpp
+    src/repository/repository.cpp
     src/vcs/FileManager.cpp
     src/security/HashManager.cpp
     src/vcs/commit.cpp
