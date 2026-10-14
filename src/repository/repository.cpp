@@ -13,7 +13,7 @@ std::filesystem::path Repository::getRootPath() const {
 }
 
 std::filesystem::path Repository::getMetadataPath() const {
-    return rootPath / ".minigit";
+    return rootPath / ".minivcs";
 }
 
 bool Repository::isInitialized() const {
