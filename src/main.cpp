@@ -6,6 +6,7 @@
 #include "FileManager.h"
 #include "Repository.h"
 #include "HashManager.h"
+#include "CommitManager.h"
 
 int main(int argc, char* argv[]) {
     if (argc < 2) {
@@ -16,6 +17,9 @@ int main(int argc, char* argv[]) {
         std::cout << "  minivcs remove <file>\n";
         std::cout << "  minivcs tracked\n";
         std::cout << "  minivcs hash <file>\n";
+        std::cout << "  minivcs commit <message>\n";
+        std::cout << "  minivcs history\n";
+        std::cout << "  minivcs status\n";
         return 0;
     }
 
@@ -77,6 +81,102 @@ int main(int argc, char* argv[]) {
     }
 
     FileManager fileManager(repository.getRootPath());
+    if (command == "commit") {
+        if (argc < 3) {
+            std::cout << "Usage: minivcs commit <message>\n";
+            return 1;
+        }
+
+        std::string message = argv[2];
+
+        for (int i = 3; i < argc; ++i) {
+            message += " ";
+            message += argv[i];
+        }
+
+        CommitManager commitManager(repository.getRootPath());
+
+        if (commitManager.createCommit(message)) {
+            std::cout << "Commit created successfully!\n";
+            std::cout << "Commit ID: "
+                    << commitManager.getLatestCommitId() << '\n';
+            return 0;
+        }
+
+        std::cerr << "Failed to create commit. Check that files are tracked "
+                    "and exist.\n";
+        return 1;
+    }
+
+    if (command == "history") {
+        CommitManager commitManager(repository.getRootPath());
+        const auto commits = commitManager.getCommitHistory();
+
+        if (commits.empty()) {
+            std::cout << "No commits yet.\n";
+            return 0;
+        }
+
+        for (auto it = commits.rbegin(); it != commits.rend(); ++it) {
+            std::cout << "\nCommit: " << it->getId() << '\n';
+            std::cout << "Message: " << it->getMessage() << '\n';
+            std::cout << "Date: " << it->getTimestamp() << '\n';
+        }
+
+        return 0;
+    }
+
+    
+    if (command == "status") {
+        const auto trackedFiles = fileManager.getTrackedFiles();
+
+        if (trackedFiles.empty()) {
+            std::cout << "No files are currently tracked.\n";
+            return 0;
+        }
+
+        CommitManager commitManager(repository.getRootPath());
+        const auto history = commitManager.getCommitHistory();
+
+        if (history.empty()) {
+            std::cout << "No commits yet. Tracked files are uncommitted.\n";
+            return 0;
+        }
+
+        const auto& previousHashes = history.back().getFileHashes();
+        bool changesFound = false;
+
+        for (const auto& relativePath : trackedFiles) {
+            const auto filePath = repository.getRootPath() / relativePath;
+
+            std::error_code ec;
+            if (!std::filesystem::is_regular_file(filePath, ec) || ec) {
+                std::cout << "Missing: " << relativePath << '\n';
+                changesFound = true;
+                continue;
+            }
+
+            const auto previous = previousHashes.find(relativePath);
+
+            if (previous == previousHashes.end()) {
+                std::cout << "Uncommitted: " << relativePath << '\n';
+                changesFound = true;
+                continue;
+            }
+
+            if (HashManager::hasChanged(filePath, previous->second)) {
+                std::cout << "Modified: " << relativePath << '\n';
+                changesFound = true;
+            }
+        }
+
+        if (!changesFound) {
+            std::cout << "Working tree clean.\n";
+        }
+
+        return 0;
+    }
+
     if (command == "add") {
         if (argc != 3) {
             std::cerr << "Usage: minivcs add <file>\n";
@@ -88,7 +188,7 @@ int main(int argc, char* argv[]) {
         }
         std::cerr
             << "Could not track file. Check that it exists, is inside "
-            << "the project, and is not inside .minigit.\n";
+            << "the project, and is not inside .minivcs.\n";
         return 1;
     }
     if (command == "remove") {
