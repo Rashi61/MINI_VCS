@@ -15,6 +15,11 @@ public:
         const std::filesystem::path& filePath,
         const std::string& previousHash
     );
+
+    static bool tryCalculateHash(
+    const std::filesystem::path& filePath,
+    std::string& hashOut
+    );
 };
 
 #endif
