@@ -290,8 +290,13 @@ MINI_VCS/
 │
 ├── frontend/
 │   ├── index.html
+│   ├── history.html
+│   ├── repositories.html
+│   ├── retention.html
 │   ├── css/
+│   │   └── remote-retention.css
 │   ├── js/
+│   │   └── remote-retention.js
 │   └── assets/
 │
 ├── database/
