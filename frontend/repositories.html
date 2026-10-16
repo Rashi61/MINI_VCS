@@ -1,1 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MiniVCS - Repositories</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="top">
+    <h1>MiniVCS</h1>
+    <nav class="tabs" aria-label="Screens">
+      <a class="tab" href="index.html">History</a>
+      <a class="tab active" href="repositories.html">Repositories</a>
+      <a class="tab" href="retention.html">Retention</a>
+    </nav>
+  </header>
+  <main>
+    <p id="msg" class="msg" role="status" hidden></p>
+    <h2>Remote repository</h2>
+    <div class="panel">
+      <label for="remotePath">Remote folder</label>
+      <input id="remotePath" value="remote/" readonly>
+      <div class="btnrow">
+        <button id="btnClone">Clone</button>
+        <button id="btnPush" class="primary">Push</button>
+        <button id="btnPull">Pull</button>
+      </div>
+    </div>
 
+    <div class="stats">
+      <div class="stat"><span class="k">Local snapshots</span><span class="v" id="statLocal">0</span></div>
+      <div class="stat"><span class="k">Remote snapshots</span><span class="v" id="statRemote">0</span></div>
+      <div class="stat"><span class="k">Waiting to push</span><span class="v" id="statAhead">0</span></div>
+      <div class="stat"><span class="k">Waiting to pull</span><span class="v" id="statBehind">0</span></div>
+    </div>
+
+    <h3>Create test snapshot</h3>
+    <div class="panel">
+      <label for="cMsg">Message</label>
+      <input id="cMsg" placeholder="Add login page">
+      <label for="cContent">File content</label>
+      <textarea id="cContent" rows="3" placeholder="Text saved in this snapshot"></textarea>
+      <label for="cAge">Age in days (to test retention)</label>
+      <input id="cAge" type="number" min="0" value="0">
+      <div class="btnrow"><button id="btnCommit" class="primary">Save snapshot</button></div>
+    </div>
+  </main>
+  <script src="js/app.js"></script>
+</body>
+</html>
