@@ -2,9 +2,13 @@
 #include <filesystem>
 #include <iostream>
 #include <string>
+#include <algorithm>
+#include <unordered_set>
+#include <unordered_map>
+#include <system_error>
 
 #include "FileManager.h"
-#include "Repository.h"
+#include "repository.h"
 #include "HashManager.h"
 #include "CommitManager.h"
 
@@ -103,8 +107,7 @@ int main(int argc, char* argv[]) {
             return 0;
         }
 
-        std::cerr << "Failed to create commit. Check that files are tracked "
-                    "and exist.\n";
+        std::cerr << "Commit was not created. See the message above for details.\n";
         return 1;
     }
 
@@ -126,30 +129,24 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
-    
     if (command == "status") {
         const auto trackedFiles = fileManager.getTrackedFiles();
-
-        if (trackedFiles.empty()) {
-            std::cout << "No files are currently tracked.\n";
-            return 0;
-        }
 
         CommitManager commitManager(repository.getRootPath());
         const auto history = commitManager.getCommitHistory();
 
-        if (history.empty()) {
-            std::cout << "No commits yet. Tracked files are uncommitted.\n";
-            return 0;
-        }
+        const auto root = repository.getRootPath();
+        const auto previousHashes = history.empty()
+            ? std::unordered_map<std::string, std::string>{}
+            : history.back().getFileHashes();
 
-        const auto& previousHashes = history.back().getFileHashes();
         bool changesFound = false;
 
+        // Check tracked files.
         for (const auto& relativePath : trackedFiles) {
-            const auto filePath = repository.getRootPath() / relativePath;
-
+            const auto filePath = root / relativePath;
             std::error_code ec;
+
             if (!std::filesystem::is_regular_file(filePath, ec) || ec) {
                 std::cout << "Missing: " << relativePath << '\n';
                 changesFound = true;
@@ -170,12 +167,66 @@ int main(int argc, char* argv[]) {
             }
         }
 
+        // Find files not tracked by MiniVCS.
+        std::error_code ec;
+
+        for (std::filesystem::recursive_directory_iterator it(
+                root,
+                std::filesystem::directory_options::skip_permission_denied,
+                ec), end;
+            it != end;
+            it.increment(ec)) {
+
+            if (ec) {
+                ec.clear();
+                continue;
+            }
+
+            const auto entry = *it;
+            const auto relativePath =
+                std::filesystem::relative(entry.path(), root, ec);
+
+            if (ec) {
+                ec.clear();
+                continue;
+            }
+
+            const auto normalized = relativePath.generic_string();
+
+            if (entry.is_directory(ec)) {
+                if (normalized == ".minivcs" ||
+                    normalized == ".git" ||
+                    normalized == "build") {
+                    it.disable_recursion_pending();
+                }
+                ec.clear();
+                continue;
+            }
+            if (normalized == "minivcs.exe") {
+                continue;
+            }
+
+            if (ec || !entry.is_regular_file(ec) || ec) {
+                ec.clear();
+                continue;
+            }
+
+            if (std::find(
+                    trackedFiles.begin(),
+                    trackedFiles.end(),
+                    normalized) == trackedFiles.end()) {
+                std::cout << "Untracked: " << normalized << '\n';
+                changesFound = true;
+            }
+        }
+
         if (!changesFound) {
             std::cout << "Working tree clean.\n";
         }
 
         return 0;
     }
+
 
     if (command == "add") {
         if (argc != 3) {
