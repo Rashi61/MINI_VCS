@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MiniVCS - Commit history</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="top">
+    <h1>MiniVCS</h1>
+    <nav class="tabs" aria-label="Screens">
+      <a class="tab active" href="index.html">History</a>
+      <a class="tab" href="repositories.html">Repositories</a>
+      <a class="tab" href="retention.html">Retention</a>
+    </nav>
+  </header>
+  <main>
+    <p id="msg" class="msg" role="status" hidden></p>
+    <h2>Commit history</h2>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Snapshot</th><th>Message</th><th>Date</th><th>Age</th><th>Status</th></tr></thead>
+        <tbody id="historyRows"></tbody>
+      </table>
+    </div>
+    <p id="empty" class="hint" hidden>No snapshots yet. Create one on the Repositories page.</p>
+  </main>
+  <script src="js/app.js"></script>
+</body>
+</html>
