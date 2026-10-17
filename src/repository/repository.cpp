@@ -1,5 +1,5 @@
 
-#include "Repository.h"
+#include "repository.h"
 
 #include <fstream>
 #include <system_error>
@@ -109,6 +109,17 @@ bool Repository::init() const {
     head << "main\n";
     head.close();
     if (!head) {
+        return false;
+    }
+    std::ofstream mainBranch(metadata / "branches" / "main");
+    if (!mainBranch) {
+        return false;
+    }
+
+    mainBranch << '\n';
+    mainBranch.close();
+
+    if (!mainBranch) {
         return false;
     }
     return isInitialized();

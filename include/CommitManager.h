@@ -24,6 +24,7 @@ public:
     std::vector<Commit> getCommitHistory() const;
 
     std::string getLatestCommitId() const;
+    bool restoreCommit(const std::string& commitId);
 };
 
 #endif

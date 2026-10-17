@@ -6,6 +6,7 @@
 #include <unordered_set>
 #include <unordered_map>
 #include <system_error>
+#include <cctype>
 
 #include "FileManager.h"
 #include "repository.h"
@@ -24,6 +25,7 @@ int main(int argc, char* argv[]) {
         std::cout << "  minivcs commit <message>\n";
         std::cout << "  minivcs history\n";
         std::cout << "  minivcs status\n";
+        std::cout << "  minivcs restore <commit-id>\n";
         return 0;
     }
 
@@ -87,7 +89,7 @@ int main(int argc, char* argv[]) {
     FileManager fileManager(repository.getRootPath());
     if (command == "commit") {
         if (argc < 3) {
-            std::cout << "Usage: minivcs commit <message>\n";
+            std::cerr << "Commit message cannot be empty.\n";
             return 1;
         }
 
@@ -96,6 +98,19 @@ int main(int argc, char* argv[]) {
         for (int i = 3; i < argc; ++i) {
             message += " ";
             message += argv[i];
+        }
+
+       const bool onlyWhitespace = std::all_of(
+            message.begin(),
+            message.end(),
+            [](unsigned char ch) {
+                return std::isspace(ch);
+            }
+        );
+
+        if (onlyWhitespace) {
+            std::cerr << "Commit message cannot be empty.\n";
+            return 1;
         }
 
         CommitManager commitManager(repository.getRootPath());
@@ -128,6 +143,21 @@ int main(int argc, char* argv[]) {
 
         return 0;
     }
+    if (command == "restore") {
+        if (argc != 3) {
+            std::cerr << "Usage: minivcs restore <commit-id>\n";
+            return 1;
+        }
+
+        CommitManager commitManager(repository.getRootPath());
+
+        if (commitManager.restoreCommit(argv[2])) {
+            return 0;
+        }
+
+        return 1;
+    }
+
 
     if (command == "status") {
         const auto trackedFiles = fileManager.getTrackedFiles();
@@ -142,7 +172,6 @@ int main(int argc, char* argv[]) {
 
         bool changesFound = false;
 
-        // Check tracked files.
         for (const auto& relativePath : trackedFiles) {
             const auto filePath = root / relativePath;
             std::error_code ec;
@@ -167,7 +196,6 @@ int main(int argc, char* argv[]) {
             }
         }
 
-        // Find files not tracked by MiniVCS.
         std::error_code ec;
 
         for (std::filesystem::recursive_directory_iterator it(
@@ -227,16 +255,33 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
-
     if (command == "add") {
         if (argc != 3) {
             std::cerr << "Usage: minivcs add <file>\n";
             return 1;
         }
-        if (fileManager.addFile(argv[2])) {
-            std::cout << "File is now tracked: " << argv[2] << '\n';
+
+        const std::filesystem::path requestedPath(argv[2]);
+        const std::string normalizedPath =
+            requestedPath.lexically_normal().generic_string();
+
+        const auto trackedFiles = fileManager.getTrackedFiles();
+
+        if (std::find(
+                trackedFiles.begin(),
+                trackedFiles.end(),
+                normalizedPath) != trackedFiles.end()) {
+            std::cout << "File is already tracked: "
+                    << normalizedPath << '\n';
             return 0;
         }
+
+        if (fileManager.addFile(argv[2])) {
+            std::cout << "File is now tracked: "
+                    << normalizedPath << '\n';
+            return 0;
+        }
+
         std::cerr
             << "Could not track file. Check that it exists, is inside "
             << "the project, and is not inside .minivcs.\n";
