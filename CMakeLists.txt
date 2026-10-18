@@ -12,12 +12,13 @@ add_executable(minivcs
     src/main.cpp
     src/repository/repository.cpp
     src/vcs/FileManager.cpp
+    src/vcs/IgnoreMatcher.cpp
     src/security/HashManager.cpp
     src/vcs/commit.cpp
     src/vcs/CommitManager.cpp
     src/RetentionManager.cpp
     src/vcs/DiffManager.cpp
-    
+
     # --- Member 2 files (branch, merge) ---
 
     # --- Member 3 files (database, auth) ---

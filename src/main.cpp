@@ -10,103 +10,12 @@
 #include <vector>
 
 #include "FileManager.h"
+#include "IgnoreMatcher.h"
 #include "repository.h"
 #include "HashManager.h"
 #include "CommitManager.h"
 #include "DiffManager.h"
 #include "RetentionManager.h"
-
-namespace {
-
-struct IgnoreRules {
-    std::vector<std::string> builtIn;
-    std::vector<std::string> userRules;
-};
-
-IgnoreRules loadIgnoreRules(const std::filesystem::path& root) {
-    IgnoreRules rules;
-    rules.builtIn = {".minivcs", ".git", ".vs", ".idea", ".vscode", "out",
-                     "build", "minivcs", "minivcs.exe"};
-
-    std::ifstream input(root / ".minivcsignore");
-    std::string line;
-
-    while (std::getline(input, line)) {
-        while (!line.empty() &&
-               std::isspace(static_cast<unsigned char>(line.back()))) {
-            line.pop_back();
-        }
-
-        std::size_t start = 0;
-        while (start < line.size() &&
-               std::isspace(static_cast<unsigned char>(line[start]))) {
-            ++start;
-        }
-        line = line.substr(start);
-
-        if (line.empty() || line[0] == '#') {
-            continue;
-        }
-
-        while (!line.empty() && line.back() == '/') {
-            line.pop_back();
-        }
-
-        if (!line.empty()) {
-            rules.userRules.push_back(line);
-        }
-    }
-
-    return rules;
-}
-
-bool matchesPath(const std::string& path, const std::string& rule) {
-    return path == rule ||
-           (path.size() > rule.size() &&
-            path.compare(0, rule.size(), rule) == 0 &&
-            path[rule.size()] == '/');
-}
-
-bool matchesComponent(const std::string& path, const std::string& rule) {
-    std::size_t begin = 0;
-
-    while (begin <= path.size()) {
-        std::size_t end = path.find('/', begin);
-        if (end == std::string::npos) {
-            end = path.size();
-        }
-        if (path.compare(begin, end - begin, rule) == 0) {
-            return true;
-        }
-        begin = end + 1;
-    }
-
-    return false;
-}
-
-bool isIgnored(const std::string& path, const IgnoreRules& rules) {
-    const std::string first = path.substr(0, path.find('/'));
-    if (first.rfind("cmake-build-", 0) == 0 || first.rfind("build-", 0) == 0) {
-        return true;
-    }
-
-    for (const auto& rule : rules.builtIn) {
-        if (matchesPath(path, rule)) {
-            return true;
-        }
-    }
-
-    for (const auto& rule : rules.userRules) {
-        if (matchesPath(path, rule) ||
-            (rule.find('/') == std::string::npos &&
-             matchesComponent(path, rule))) {
-            return true;
-        }
-    }
-
-    return false;
-}
-}
 
 int main(int argc, char* argv[]) {
     if (argc < 2) {
@@ -450,7 +359,7 @@ int main(int argc, char* argv[]) {
             }
         }
 
-        const IgnoreRules ignoreRules = loadIgnoreRules(root);
+        const IgnoreMatcher ignoreMatcher(root);
         std::error_code ec;
 
         for (std::filesystem::recursive_directory_iterator it(
@@ -476,7 +385,7 @@ int main(int argc, char* argv[]) {
 
             const auto normalized = relativePath.generic_string();
 
-            if (isIgnored(normalized, ignoreRules)) {
+            if (ignoreMatcher.isIgnored(normalized)) {
                 if (entry.is_directory(ec)) {
                     it.disable_recursion_pending();
                 }
@@ -519,6 +428,17 @@ int main(int argc, char* argv[]) {
         const std::filesystem::path requestedPath(argv[2]);
         const std::string normalizedPath =
             requestedPath.lexically_normal().generic_string();
+        
+        const IgnoreMatcher ignoreMatcher(
+            repository.getRootPath()
+        );
+
+        if (ignoreMatcher.isIgnored(normalizedPath)) {
+            std::cerr
+                << "Cannot add ignored path: "
+                << normalizedPath << '\n';
+            return 1;
+        }
 
         const auto trackedFiles = fileManager.getTrackedFiles();
 
