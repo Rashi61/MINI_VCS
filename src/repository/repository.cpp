@@ -2,10 +2,41 @@
 #include "repository.h"
 
 #include <fstream>
+#include<optional>
 #include <system_error>
 
 Repository::Repository(const std::filesystem::path& path)
     : rootPath(std::filesystem::absolute(path).lexically_normal()) {
+}
+std::optional<std::filesystem::path>
+Repository::discoverRoot(const std::filesystem::path& start) {
+    namespace fs = std::filesystem;
+
+    std::error_code ec;
+
+    fs::path current = fs::absolute(start, ec).lexically_normal();
+
+    if (ec) {
+        return std::nullopt;
+    }
+
+    while (true) {
+        Repository candidate(current);
+
+        if (candidate.isInitialized()) {
+            return current;
+        }
+
+        const fs::path parent = current.parent_path();
+
+        if (parent == current || parent.empty()) {
+            break;
+        }
+
+        current = parent;
+    }
+
+    return std::nullopt;
 }
 
 std::filesystem::path Repository::getRootPath() const {
