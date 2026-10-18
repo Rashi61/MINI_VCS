@@ -427,8 +427,7 @@ int main(int argc, char* argv[]) {
 
         const std::filesystem::path requestedPath(argv[2]);
         const std::string normalizedPath =
-            requestedPath.lexically_normal().generic_string();
-        
+            requestedPath.lexically_normal().generic_string();       
         const IgnoreMatcher ignoreMatcher(
             repository.getRootPath()
         );
