@@ -508,6 +508,89 @@ std::string CommitManager::getLatestCommitId() const {
     return commitId;
 }
 
+bool CommitManager::updateBranchPointer(
+    const std::string& branchName,
+    const std::string& commitId
+) const {
+    namespace fs = std::filesystem;
+
+    if (branchName.empty() ||
+        branchName == "." ||
+        branchName == ".." ||
+        branchName.find_first_of("/\\") != std::string::npos) {
+        std::cerr << "Invalid branch name.\n";
+        return false;
+    }
+
+    if (commitId.empty()) {
+        std::cerr << "Commit ID cannot be empty.\n";
+        return false;
+    }
+
+    Commit commit;
+
+    if (!getCommit(commitId, commit)) {
+        std::cerr
+            << "Cannot update branch to an invalid commit.\n";
+        return false;
+    }
+
+    const fs::path branchPath =
+        metadataPath / "branches" / branchName;
+
+    std::error_code ec;
+
+    if (!fs::is_regular_file(branchPath, ec) || ec) {
+        std::cerr
+            << "Branch does not exist: "
+            << branchName << '\n';
+        return false;
+    }
+
+    const fs::path temporaryPath =
+        metadataPath / "branches" /
+        (branchName + ".tmp");
+
+    {
+        std::ofstream output(
+            temporaryPath,
+            std::ios::out | std::ios::trunc
+        );
+
+        if (!output) {
+            std::cerr
+                << "Could not create temporary branch pointer.\n";
+            return false;
+        }
+
+        output << commit.getId() << '\n';
+        output.close();
+
+        if (!output) {
+            fs::remove(temporaryPath, ec);
+
+            std::cerr
+                << "Could not write branch pointer.\n";
+            return false;
+        }
+    }
+
+    fs::rename(temporaryPath, branchPath, ec);
+
+    if (ec) {
+        std::error_code cleanupError;
+        fs::remove(temporaryPath, cleanupError);
+
+        std::cerr
+            << "Could not replace branch pointer: "
+            << ec.message() << '\n';
+
+        return false;
+    }
+
+    return true;
+}
+
 bool CommitManager::createCommit(const std::string& message) {
     if (message.empty()) {
         std::cerr << "Commit message cannot be empty.\n";
@@ -1266,4 +1349,10 @@ bool CommitManager::restoreCommit(const std::string& requestedId,
     std::cout << "Files absent from the selected snapshot were preserved.\n";
 
     return true;
+}
+bool CommitManager::checkoutCommit(
+    const std::string& requestedId,
+    bool force
+) {
+    return restoreCommit(requestedId, force);
 }

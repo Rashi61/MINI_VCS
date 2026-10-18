@@ -39,11 +39,29 @@ public:
     std::vector<Commit> getCommitHistory() const;
 
     std::string getLatestCommitId() const;
-    bool restoreCommit(const std::string& requestedId, bool force = false);
 
-    std::string resolveCommitId(const std::string& prefix) const;
+    bool updateBranchPointer(
+        const std::string& branchName,
+        const std::string& commitId
+    ) const;
 
-    bool getCommit(const std::string& requestedId, Commit& out) const;
+    bool checkoutCommit(
+        const std::string& requestedId,
+        bool force = false
+    );
+
+    bool restoreCommit(
+        const std::string& requestedId,
+        bool force = false
+    );
+
+    std::string resolveCommitId(
+        const std::string& prefix
+    ) const;
+
+    bool getCommit(const std::string& requestedId,
+        Commit& out
+    )const;
 
     std::filesystem::path getSnapshotPath(
         const std::string& commitId
