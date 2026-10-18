@@ -175,15 +175,17 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
-    Repository repository(std::filesystem::current_path());
-    if (!repository.isInitialized()) {
+   const auto discoveredRoot =
+    Repository::discoverRoot(std::filesystem::current_path());
+
+    if (!discoveredRoot.has_value()) {
         std::cerr
-            << "Error: current directory is not an initialized "
+            << "Error: current directory is not inside an initialized "
             << "MiniVCS repository.\n";
-        std::cerr
-            << "Change into your project directory and try again.\n";
         return 1;
     }
+
+    Repository repository(*discoveredRoot);
 
     FileManager fileManager(repository.getRootPath());
     if (command == "commit") {
@@ -225,19 +227,36 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    if (command == "history") {
+        if (command == "history") {
         CommitManager commitManager(repository.getRootPath());
-        const auto commits = commitManager.getCommitHistory();
+        const HistoryResult history =
+            commitManager.readCommitHistory();
 
-        if (commits.empty()) {
+        if (!history.valid) {
+            std::cerr
+                << "Error: corrupt repository history: "
+                << history.error << '\n';
+
+            return 1;
+        }
+
+        if (history.commits.empty()) {
             std::cout << "No commits yet.\n";
             return 0;
         }
 
-        for (auto it = commits.rbegin(); it != commits.rend(); ++it) {
-            std::cout << "\nCommit: " << it->getId() << '\n';
-            std::cout << "Message: " << it->getMessage() << '\n';
-            std::cout << "Date: " << it->getTimestamp() << '\n';
+        for (auto it = history.commits.rbegin();
+             it != history.commits.rend();
+             ++it) {
+            std::cout << "\nCommit: "
+                      << it->getId() << '\n';
+
+            std::cout << "Message: "
+                      << it->getMessage() << '\n';
+
+            std::cout << "Date: "
+                      << it->getTimestamp() << '\n';
+
             std::cout << "Parent: "
                       << (it->getParentId().empty()
                               ? std::string("none")
@@ -247,6 +266,7 @@ int main(int argc, char* argv[]) {
 
         return 0;
     }
+
     if (command == "restore") {
         bool force = false;
         std::string requestedId;
