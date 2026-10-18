@@ -13,7 +13,7 @@ private:
     std::filesystem::path repositoryRoot;
     std::filesystem::path metadataPath;
     std::filesystem::path objectsPath;
-    
+
     bool readCommitFile(const std::string& commitId, Commit& out) const;
 
     std::vector<std::string> findOverwriteConflicts(
@@ -35,7 +35,7 @@ public:
     std::string resolveCommitId(const std::string& prefix) const;
 
     bool getCommit(const std::string& requestedId, Commit& out) const;
-.
+
     std::filesystem::path getSnapshotPath(const std::string& commitId) const;
 
     bool isSnapshotPruned(const std::string& commitId) const;

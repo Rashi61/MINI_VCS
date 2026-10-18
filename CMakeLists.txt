@@ -17,6 +17,7 @@ add_executable(minivcs
     src/vcs/CommitManager.cpp
     src/RetentionManager.cpp
     src/vcs/DiffManager.cpp
+    
     # --- Member 2 files (branch, merge) ---
 
     # --- Member 3 files (database, auth) ---
