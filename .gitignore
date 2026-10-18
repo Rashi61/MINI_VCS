@@ -10,3 +10,6 @@ cmake_install.cmake
 Makefile
 .minivcs/
 build/
+build-tests/
+__pycache__/
+.vs/

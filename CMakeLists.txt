@@ -1,4 +1,3 @@
-
 cmake_minimum_required(VERSION 3.20)
 
 project(MiniVCS LANGUAGES CXX)
@@ -17,7 +16,21 @@ add_executable(minivcs
     src/vcs/commit.cpp
     src/vcs/CommitManager.cpp
     src/RetentionManager.cpp
+    src/vcs/DiffManager.cpp
 )
 
 target_include_directories(minivcs PRIVATE include)
 target_link_libraries(minivcs PRIVATE OpenSSL::Crypto)
+
+enable_testing()
+
+find_package(Python3 COMPONENTS Interpreter QUIET)
+
+if(Python3_Interpreter_FOUND)
+    add_test(
+        NAME minivcs_cli_tests
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_SOURCE_DIR}/tests/run_tests.py
+                $<TARGET_FILE:minivcs>
+    )
+endif()

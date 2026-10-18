@@ -1,4 +1,3 @@
-
 #include "HashManager.h"
 
 #include <openssl/evp.h>
@@ -116,4 +115,19 @@ std::string HashManager::calculateHashFromString(
     }
 
     return result.str();
+}
+bool HashManager::tryCalculateHash(
+    const std::filesystem::path& filePath,
+    std::string& hashOut
+) {
+    hashOut.clear();
+
+    std::string hash = calculateHash(filePath);
+
+    if (hash.empty()) {
+        return false;
+    }
+
+    hashOut = std::move(hash);
+    return true;
 }

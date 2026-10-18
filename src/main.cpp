@@ -1,4 +1,3 @@
-
 #include <filesystem>
 #include <iostream>
 #include <string>
@@ -7,11 +6,110 @@
 #include <unordered_map>
 #include <system_error>
 #include <cctype>
+#include <fstream>
+#include <vector>
 
 #include "FileManager.h"
 #include "repository.h"
 #include "HashManager.h"
 #include "CommitManager.h"
+#include "DiffManager.h"
+#include "RetentionManager.h"
+
+namespace {
+
+struct IgnoreRules {
+    std::vector<std::string> builtIn;   // exact path or directory prefix
+    std::vector<std::string> userRules; // also match any path component
+};
+
+IgnoreRules loadIgnoreRules(const std::filesystem::path& root) {
+    IgnoreRules rules;
+    rules.builtIn = {".minivcs", ".git", ".vs", ".idea", ".vscode", "out",
+                     "build", "minivcs", "minivcs.exe"};
+
+    std::ifstream input(root / ".minivcsignore");
+    std::string line;
+
+    while (std::getline(input, line)) {
+        // Trim whitespace and a possible Windows carriage return.
+        while (!line.empty() &&
+               std::isspace(static_cast<unsigned char>(line.back()))) {
+            line.pop_back();
+        }
+
+        std::size_t start = 0;
+        while (start < line.size() &&
+               std::isspace(static_cast<unsigned char>(line[start]))) {
+            ++start;
+        }
+        line = line.substr(start);
+
+        if (line.empty() || line[0] == '#') {
+            continue;
+        }
+
+        while (!line.empty() && line.back() == '/') {
+            line.pop_back();
+        }
+
+        if (!line.empty()) {
+            rules.userRules.push_back(line);
+        }
+    }
+
+    return rules;
+}
+
+bool matchesPath(const std::string& path, const std::string& rule) {
+    return path == rule ||
+           (path.size() > rule.size() &&
+            path.compare(0, rule.size(), rule) == 0 &&
+            path[rule.size()] == '/');
+}
+
+bool matchesComponent(const std::string& path, const std::string& rule) {
+    std::size_t begin = 0;
+
+    while (begin <= path.size()) {
+        std::size_t end = path.find('/', begin);
+        if (end == std::string::npos) {
+            end = path.size();
+        }
+        if (path.compare(begin, end - begin, rule) == 0) {
+            return true;
+        }
+        begin = end + 1;
+    }
+
+    return false;
+}
+
+bool isIgnored(const std::string& path, const IgnoreRules& rules) {
+    // CLion / Visual Studio style build folders: cmake-build-debug, build-x64...
+    const std::string first = path.substr(0, path.find('/'));
+    if (first.rfind("cmake-build-", 0) == 0 || first.rfind("build-", 0) == 0) {
+        return true;
+    }
+
+    for (const auto& rule : rules.builtIn) {
+        if (matchesPath(path, rule)) {
+            return true;
+        }
+    }
+
+    for (const auto& rule : rules.userRules) {
+        if (matchesPath(path, rule) ||
+            (rule.find('/') == std::string::npos &&
+             matchesComponent(path, rule))) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+}  // namespace
 
 int main(int argc, char* argv[]) {
     if (argc < 2) {
@@ -25,7 +123,11 @@ int main(int argc, char* argv[]) {
         std::cout << "  minivcs commit <message>\n";
         std::cout << "  minivcs history\n";
         std::cout << "  minivcs status\n";
-        std::cout << "  minivcs restore <commit-id>\n";
+        std::cout << "  minivcs restore <commit-id|prefix> [--force]\n";
+        std::cout << "  minivcs show <commit-id|prefix>\n";
+        std::cout << "  minivcs diff [<commit>] [<commit>]\n";
+        std::cout << "  minivcs retention [status|set <days>|cleanup "
+                     "[--dry-run]|log]\n";
         return 0;
     }
 
@@ -139,25 +241,160 @@ int main(int argc, char* argv[]) {
             std::cout << "\nCommit: " << it->getId() << '\n';
             std::cout << "Message: " << it->getMessage() << '\n';
             std::cout << "Date: " << it->getTimestamp() << '\n';
+            std::cout << "Parent: "
+                      << (it->getParentId().empty()
+                              ? std::string("none")
+                              : it->getParentId())
+                      << '\n';
         }
 
         return 0;
     }
     if (command == "restore") {
-        if (argc != 3) {
-            std::cerr << "Usage: minivcs restore <commit-id>\n";
+        bool force = false;
+        std::string requestedId;
+
+        for (int i = 2; i < argc; ++i) {
+            const std::string arg = argv[i];
+
+            if (arg == "--force") {
+                force = true;
+            } else if (requestedId.empty()) {
+                requestedId = arg;
+            } else {
+                requestedId.clear();
+                break;
+            }
+        }
+
+        if (requestedId.empty()) {
+            std::cerr << "Usage: minivcs restore <commit-id|prefix> "
+                         "[--force]\n";
             return 1;
         }
 
         CommitManager commitManager(repository.getRootPath());
 
-        if (commitManager.restoreCommit(argv[2])) {
+        return commitManager.restoreCommit(requestedId, force) ? 0 : 1;
+    }
+
+    if (command == "show") {
+        if (argc != 3) {
+            std::cerr << "Usage: minivcs show <commit-id|prefix>\n";
+            return 1;
+        }
+
+        DiffManager diffManager(repository.getRootPath());
+        return diffManager.showCommit(argv[2], std::cout) ? 0 : 1;
+    }
+
+    if (command == "diff") {
+        if (argc > 4) {
+            std::cerr << "Usage: minivcs diff [<commit>] [<commit>]\n";
+            return 1;
+        }
+
+        DiffManager diffManager(repository.getRootPath());
+
+        if (argc == 4) {
+            return diffManager.diffCommits(argv[2], argv[3], std::cout)
+                       ? 0 : 1;
+        }
+
+        return diffManager.diffWorkingTree(argc == 3 ? argv[2] : "",
+                                           std::cout)
+                   ? 0 : 1;
+    }
+
+    if (command == "retention") {
+        const auto metadata = repository.getMetadataPath();
+        CommitManager commitManager(repository.getRootPath());
+
+        RetentionManager retention(
+            (metadata / "objects").string(),
+            (metadata / "retention.cfg").string());
+        retention.setProtected(commitManager.getBranchTips());
+
+        const std::string action = (argc >= 3) ? argv[2] : "status";
+
+        if (action == "set") {
+            if (argc != 4 ||
+                std::string(argv[3]).find_first_not_of("0123456789") !=
+                    std::string::npos ||
+                std::string(argv[3]).size() > 6) {
+                std::cerr << "Usage: minivcs retention set <days>\n";
+                return 1;
+            }
+
+            retention.setRetentionDays(std::stoi(argv[3]));
+            std::cout << "Retention set to "
+                      << retention.getRetentionDays() << " days.\n";
             return 0;
         }
 
+        if (action == "status") {
+            std::cout << "Retention: " << retention.getRetentionDays()
+                      << " days\n";
+
+            for (const auto& info : retention.listSnapshots()) {
+                if (!info.isCommit) {
+                    continue;
+                }
+
+                std::string state = "keep";
+                if (info.pruned)            state = "pruned (history kept)";
+                else if (info.latest)       state = "keep (newest)";
+                else if (info.protectedTip) state = "keep (branch tip)";
+                else if (info.expired)      state = "EXPIRED";
+
+                std::cout << "  " << info.name.substr(0, 8) << "  "
+                          << info.date << "  " << info.ageDays << "d  "
+                          << state << '\n';
+            }
+
+            return 0;
+        }
+
+        if (action == "cleanup") {
+            const bool dryRun = (argc == 4 && std::string(argv[3]) == "--dry-run");
+
+            if (argc > 4 || (argc == 4 && !dryRun)) {
+                std::cerr << "Usage: minivcs retention cleanup [--dry-run]\n";
+                return 1;
+            }
+
+            if (dryRun) {
+                const auto expired = retention.findExpired();
+                std::cout << expired.size() << " commit snapshot(s) would be "
+                             "removed.\n";
+                for (const auto& info : expired) {
+                    std::cout << "  " << info.name.substr(0, 8) << "  "
+                              << info.date << '\n';
+                }
+                return 0;
+            }
+
+            const int removed = retention.cleanup();
+            std::cout << removed << " commit snapshot(s) removed. "
+                         "Commit history was kept.\n";
+            return 0;
+        }
+
+        if (action == "log") {
+            const auto lines = retention.expiredLog();
+            if (lines.empty()) {
+                std::cout << "No snapshots have been removed yet.\n";
+            }
+            for (const auto& line : lines) {
+                std::cout << line << '\n';
+            }
+            return 0;
+        }
+
+        std::cerr << "Usage: minivcs retention "
+                     "[status|set <days>|cleanup [--dry-run]|log]\n";
         return 1;
     }
-
 
     if (command == "status") {
         const auto trackedFiles = fileManager.getTrackedFiles();
@@ -196,6 +433,7 @@ int main(int argc, char* argv[]) {
             }
         }
 
+        const IgnoreRules ignoreRules = loadIgnoreRules(root);
         std::error_code ec;
 
         for (std::filesystem::recursive_directory_iterator it(
@@ -221,16 +459,16 @@ int main(int argc, char* argv[]) {
 
             const auto normalized = relativePath.generic_string();
 
-            if (entry.is_directory(ec)) {
-                if (normalized == ".minivcs" ||
-                    normalized == ".git" ||
-                    normalized == "build") {
+            if (isIgnored(normalized, ignoreRules)) {
+                if (entry.is_directory(ec)) {
                     it.disable_recursion_pending();
                 }
                 ec.clear();
                 continue;
             }
-            if (normalized == "minivcs.exe") {
+
+            if (entry.is_directory(ec)) {
+                ec.clear();
                 continue;
             }
 
