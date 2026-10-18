@@ -19,8 +19,8 @@
 namespace {
 
 struct IgnoreRules {
-    std::vector<std::string> builtIn;   // exact path or directory prefix
-    std::vector<std::string> userRules; // also match any path component
+    std::vector<std::string> builtIn;
+    std::vector<std::string> userRules;
 };
 
 IgnoreRules loadIgnoreRules(const std::filesystem::path& root) {
@@ -32,7 +32,6 @@ IgnoreRules loadIgnoreRules(const std::filesystem::path& root) {
     std::string line;
 
     while (std::getline(input, line)) {
-        // Trim whitespace and a possible Windows carriage return.
         while (!line.empty() &&
                std::isspace(static_cast<unsigned char>(line.back()))) {
             line.pop_back();
@@ -86,7 +85,6 @@ bool matchesComponent(const std::string& path, const std::string& rule) {
 }
 
 bool isIgnored(const std::string& path, const IgnoreRules& rules) {
-    // CLion / Visual Studio style build folders: cmake-build-debug, build-x64...
     const std::string first = path.substr(0, path.find('/'));
     if (first.rfind("cmake-build-", 0) == 0 || first.rfind("build-", 0) == 0) {
         return true;
@@ -108,8 +106,7 @@ bool isIgnored(const std::string& path, const IgnoreRules& rules) {
 
     return false;
 }
-
-}  // namespace
+}
 
 int main(int argc, char* argv[]) {
     if (argc < 2) {
@@ -552,6 +549,12 @@ int main(int argc, char* argv[]) {
         }
         return 0;
     }
+
+    // ===== Member 2: branch / switch / merge commands =====
+
+    // ===== Member 3: user / login / permission commands =====
+
+    // ===== Member 4: clone / push / pull commands =====
     std::cerr << "Unknown command: " << command << '\n';
     return 1;
 }

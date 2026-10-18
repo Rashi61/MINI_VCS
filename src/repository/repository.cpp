@@ -18,51 +18,41 @@ std::filesystem::path Repository::getMetadataPath() const {
 
 bool Repository::isInitialized() const {
     std::error_code ec;
-
     const auto metadata = getMetadataPath();
-
     if (!std::filesystem::is_directory(rootPath, ec) || ec) {
         return false;
     }
-
     ec.clear();
     if (!std::filesystem::is_directory(metadata, ec) || ec) {
         return false;
     }
-
     ec.clear();
     if (!std::filesystem::is_directory(
             metadata / "objects", ec) || ec) {
         return false;
     }
-
     ec.clear();
     if (!std::filesystem::is_directory(
             metadata / "branches", ec) || ec) {
         return false;
     }
-
     ec.clear();
     if (!std::filesystem::is_regular_file(
             metadata / "config", ec) || ec) {
         return false;
     }
-
     ec.clear();
     if (!std::filesystem::is_regular_file(
             metadata / "HEAD", ec) || ec) {
         return false;
     }
-
     std::ifstream config(metadata / "config");
     std::string line;
-
     while (std::getline(config, line)) {
         if (line == "repository_format=1") {
             return true;
         }
     }
-
     return false;
 }
 

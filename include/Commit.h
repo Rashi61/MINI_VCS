@@ -1,4 +1,3 @@
-
 #ifndef COMMIT_H
 #define COMMIT_H
 
@@ -11,8 +10,6 @@ private:
     std::string message;
     std::string timestamp;
     std::string parentId;
-
-    // Maps each tracked relative file path to its SHA-256 hash.
     std::unordered_map<std::string, std::string> fileHashes;
 
 public:

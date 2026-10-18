@@ -18,16 +18,14 @@ namespace {
 
 namespace fs = std::filesystem;
 
-// Above this many line pairs we refuse to build the comparison table.
 constexpr std::size_t kMaxTableCells = 4000000;
 constexpr std::size_t kContext = 3;
 
 struct Op {
-    char tag;           // ' ' same, '-' removed, '+' added
+    char tag;
     std::string text;
 };
 
-// One side of a file comparison.
 struct Side {
     bool exists = false;
     fs::path file;
@@ -68,7 +66,6 @@ ReadResult readLines(const fs::path& path, std::vector<std::string>& lines) {
     return ReadResult::Ok;
 }
 
-// Builds the edit script using a longest-common-subsequence table.
 bool buildOps(const std::vector<std::string>& a,
               const std::vector<std::string>& b,
               std::vector<Op>& ops) {
@@ -96,7 +93,6 @@ bool buildOps(const std::vector<std::string>& a,
         ops.push_back({' ', a[i]});
     }
 
-    // lcs[i][j] = LCS length of a[prefix+i..] and b[prefix+j..]
     std::vector<std::uint32_t> lcs((n + 1) * (m + 1), 0);
     auto at = [&](std::size_t i, std::size_t j) -> std::uint32_t& {
         return lcs[i * (m + 1) + j];
@@ -152,8 +148,6 @@ Side commitSide(const CommitManager& manager, const std::string& commitId,
 
     return side;
 }
-
-// Writes the diff of one file. Returns false only on an unreadable file.
 bool writeFileDiff(std::ostream& out, const std::string& path,
                    const Side& before, const Side& after) {
     std::vector<std::string> oldLines, newLines;
@@ -199,8 +193,7 @@ bool writeFileDiff(std::ostream& out, const std::string& path,
 
     return true;
 }
-
-}  // namespace
+}
 
 DiffManager::DiffManager(const std::filesystem::path& rootPath)
     : repositoryRoot(std::filesystem::absolute(rootPath)) {}
@@ -216,8 +209,6 @@ std::string DiffManager::diffLines(const std::vector<std::string>& oldLines,
         tooLarge = true;
         return "";
     }
-
-    // Positions: consumedOld/New = lines before op k.
     std::vector<std::size_t> oldBefore(ops.size() + 1, 0);
     std::vector<std::size_t> newBefore(ops.size() + 1, 0);
 
@@ -230,7 +221,6 @@ std::string DiffManager::diffLines(const std::vector<std::string>& oldLines,
     std::size_t k = 0;
 
     while (k < ops.size()) {
-        // Find the next change.
         while (k < ops.size() && ops[k].tag == ' ') {
             ++k;
         }
@@ -241,7 +231,6 @@ std::string DiffManager::diffLines(const std::vector<std::string>& oldLines,
 
         const std::size_t lo = (k > kContext) ? k - kContext : 0;
 
-        // Extend the hunk while further changes are within 2*context.
         std::size_t end = k;
         std::size_t lastChange = k;
 
@@ -271,7 +260,6 @@ std::string DiffManager::diffLines(const std::vector<std::string>& oldLines,
             << ',' << newCount << " @@\n";
 
         for (std::size_t q = lo; q < hi; ++q) {
-            // Show Windows (CRLF) files without a stray carriage return.
             std::string shown = ops[q].text;
             if (!shown.empty() && shown.back() == '\r') {
                 shown.pop_back();

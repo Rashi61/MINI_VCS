@@ -14,8 +14,6 @@ namespace fs = std::filesystem;
 using namespace std;
 
 namespace {
-
-// Reads the "YYYY-MM-DD HH:MM:SS" timestamp stored in a commit's commit.txt.
 bool readCommitTime(const fs::path& commitFile, time_t& out, string& text) {
     ifstream in(commitFile);
     string id, message, stamp;
@@ -58,8 +56,7 @@ bool isCommitDir(const fs::directory_entry& e) {
 
     return fs::is_regular_file(e.path() / "commit.txt", ec) && !ec;
 }
-
-}  // namespace
+}
 
 RetentionManager::RetentionManager(string snapshotDir, string configFile)
     : dir_(std::move(snapshotDir)), cfg_(std::move(configFile)) {
@@ -117,7 +114,6 @@ vector<SnapshotInfo> RetentionManager::listSnapshots() const {
                         .count());
                 s.date = text;
             } else {
-                // Unreadable timestamp: fall back to the file's mtime.
                 const auto age =
                     fileNow - fs::last_write_time(e.path() / "commit.txt", ec);
                 s.ageHours = static_cast<long>(
@@ -179,7 +175,6 @@ int RetentionManager::cleanup() {
         error_code ec;
 
         if (s.isCommit) {
-            // Keep commit.txt; delete only the stored file copies.
             fs::remove_all(fs::path(s.path) / "files", ec);
             if (ec) continue;
 

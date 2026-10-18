@@ -19,8 +19,6 @@
 #include <vector>
 
 namespace {
-
-// Case-folding is only needed on filesystems that are case-insensitive.
 std::string foldKey(const std::string& value) {
 #if defined(_WIN32) || defined(__APPLE__)
     std::string out = value;
@@ -32,8 +30,6 @@ std::string foldKey(const std::string& value) {
 #endif
 }
 
-// Validates one path stored in commit metadata. On success, 'normalized'
-// holds the cleaned generic path.
 bool validateSnapshotPath(const std::string& storedPath,
                           std::string& normalized) {
     namespace fs = std::filesystem;
@@ -46,7 +42,6 @@ bool validateSnapshotPath(const std::string& storedPath,
     }
 
 #ifdef _WIN32
-    // Windows-only restrictions: drive letters, streams, reserved chars.
     if (text.find_first_of(":<>\"|?*") != std::string::npos) {
         return false;
     }
@@ -105,8 +100,8 @@ bool validateSnapshotPath(const std::string& storedPath,
 
 
 struct SnapshotManifest {
-    std::vector<std::string> paths;                       // normalized paths
-    std::unordered_map<std::string, std::string> hashes;  // path -> SHA-256
+    std::vector<std::string> paths;
+    std::unordered_map<std::string, std::string> hashes;
 };
 
 bool isSha256(const std::string& hash) {
@@ -121,7 +116,6 @@ bool isMissingError(const std::error_code& error) {
            error == std::errc::not_a_directory;
 }
 
-// Reads and validates commit.txt for restore. Prints the reason on failure.
 bool parseSnapshotManifest(const std::filesystem::path& commitFilePath,
                            const std::string& commitId,
                            SnapshotManifest& manifest) {
@@ -181,8 +175,6 @@ bool parseSnapshotManifest(const std::filesystem::path& commitFilePath,
         std::cerr << "Unexpected data in commit metadata.\n";
         return false;
     }
-
-    // A snapshot cannot contain a file and another file below that path.
     for (const auto& path : manifest.paths) {
         fs::path parent = fs::path(path).parent_path();
 
@@ -198,7 +190,6 @@ bool parseSnapshotManifest(const std::filesystem::path& commitFilePath,
     return true;
 }
 
-// True if any component of 'relative' (below 'base') is a symbolic link.
 bool containsSymlink(const std::filesystem::path& base,
                      const std::filesystem::path& relative) {
     namespace fs = std::filesystem;
@@ -224,7 +215,6 @@ bool containsSymlink(const std::filesystem::path& base,
     return false;
 }
 
-// Step 1: every file stored in the snapshot must exist and match its hash.
 bool verifySnapshotFiles(const std::filesystem::path& snapshotDir,
                          const SnapshotManifest& manifest) {
     namespace fs = std::filesystem;
@@ -256,7 +246,6 @@ bool verifySnapshotFiles(const std::filesystem::path& snapshotDir,
     return true;
 }
 
-// Step 2: copy the snapshot into a staging folder and verify the copies.
 bool stageSnapshotFiles(const std::filesystem::path& snapshotDir,
                         const std::filesystem::path& stagedFiles,
                         const SnapshotManifest& manifest) {
@@ -289,7 +278,6 @@ bool stageSnapshotFiles(const std::filesystem::path& snapshotDir,
     return true;
 }
 
-// Step 3: make sure the working tree layout can accept the snapshot.
 bool preflightDestinations(const std::filesystem::path& root,
                            const SnapshotManifest& manifest) {
     namespace fs = std::filesystem;
@@ -341,7 +329,6 @@ bool preflightDestinations(const std::filesystem::path& root,
     return true;
 }
 
-// Step 4: copy each file about to be overwritten into the backup folder.
 bool backUpDestinations(const std::filesystem::path& root,
                         const std::filesystem::path& backups,
                         const SnapshotManifest& manifest,
@@ -380,8 +367,6 @@ bool backUpDestinations(const std::filesystem::path& root,
     return true;
 }
 
-// Step 5: write the staged files into the working tree. Records every path
-// touched and every directory created so a failure can be rolled back.
 bool applyStagedFiles(const std::filesystem::path& root,
                       const std::filesystem::path& stagedFiles,
                       const SnapshotManifest& manifest,
@@ -428,7 +413,6 @@ bool applyStagedFiles(const std::filesystem::path& root,
             return false;
         }
 
-        // Record before copying: a failed copy may leave a partial file.
         attempted.push_back(path);
 
         std::error_code ec;
@@ -450,7 +434,6 @@ bool applyStagedFiles(const std::filesystem::path& root,
     return true;
 }
 
-// Undo a failed restore using the backups. Returns true if fully undone.
 bool rollbackRestore(const std::filesystem::path& root,
                      const std::filesystem::path& backups,
                      const std::unordered_set<std::string>& backedUp,
@@ -484,8 +467,7 @@ bool rollbackRestore(const std::filesystem::path& root,
 
     for (auto it = createdDirs.rbegin(); it != createdDirs.rend(); ++it) {
         std::error_code ec;
-        fs::remove(*it, ec);  // fails harmlessly if the directory is not empty
-
+        fs::remove(*it, ec);
         if (ec) {
             ok = false;
             std::cerr << "Could not clean up directory: "
@@ -496,7 +478,7 @@ bool rollbackRestore(const std::filesystem::path& root,
     return ok;
 }
 
-}  // namespace
+}
 
 CommitManager::CommitManager(const std::filesystem::path& rootPath)
     : repositoryRoot(std::filesystem::absolute(rootPath)),
@@ -915,7 +897,6 @@ std::string CommitManager::resolveCommitId(
 
     std::error_code ec;
 
-    // An exact match always wins.
     if (fs::is_regular_file(objectsPath / prefix / "commit.txt", ec)) {
         return prefix;
     }
@@ -959,7 +940,6 @@ std::vector<std::string> CommitManager::findOverwriteConflicts(
     const std::unordered_map<std::string, std::string>& hashes) const {
     namespace fs = std::filesystem;
 
-    // Content stored in any commit of this history can always be recovered.
     std::unordered_map<std::string, std::unordered_set<std::string>> known;
 
     for (const auto& commit : getCommitHistory()) {
@@ -998,7 +978,6 @@ bool CommitManager::restoreCommit(const std::string& requestedId,
                                   bool force) {
     namespace fs = std::filesystem;
 
-    // Only accept simple, portable commit IDs.
     if (requestedId.empty() ||
         !std::all_of(requestedId.begin(), requestedId.end(),
             [](unsigned char c) {
@@ -1019,7 +998,6 @@ bool CommitManager::restoreCommit(const std::string& requestedId,
     const fs::path stagingDir = metadataPath / "restore-staging";
     std::error_code ec;
 
-    // 1. Read and validate the commit's metadata.
     SnapshotManifest manifest;
 
     if (!parseSnapshotManifest(commitDir / "commit.txt", commitId,
@@ -1044,12 +1022,10 @@ bool CommitManager::restoreCommit(const std::string& requestedId,
         return false;
     }
 
-    // 2. Check the stored snapshot before touching the working tree.
     if (!verifySnapshotFiles(snapshotDir, manifest)) {
         return false;
     }
 
-    // 3. Refuse to destroy uncommitted work unless --force was given.
     if (!force) {
         const auto conflicts =
             findOverwriteConflicts(manifest.paths, manifest.hashes);
@@ -1065,8 +1041,6 @@ bool CommitManager::restoreCommit(const std::string& requestedId,
         }
     }
 
-    // 4. Create a fresh staging area. Never reuse an old one: it may hold
-    //    backups from an earlier incomplete rollback.
     ec.clear();
     const fs::file_status stagingStatus = fs::symlink_status(stagingDir, ec);
 
@@ -1108,7 +1082,6 @@ bool CommitManager::restoreCommit(const std::string& requestedId,
         return false;
     }
 
-    // 5. Stage, preflight and back up. Nothing in the project changes yet.
     std::unordered_set<std::string> backedUp;
 
     if (!stageSnapshotFiles(snapshotDir, stagedFiles, manifest) ||
@@ -1118,7 +1091,6 @@ bool CommitManager::restoreCommit(const std::string& requestedId,
         return false;
     }
 
-    // 6. Apply. Roll everything back if any single file fails.
     std::vector<std::string> attempted;
     std::vector<fs::path> createdDirs;
 
