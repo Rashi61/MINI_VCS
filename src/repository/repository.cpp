@@ -111,5 +111,19 @@ bool Repository::init() const {
     if (!head) {
         return false;
     }
+        // Create the initial main branch with no commits.
+    std::ofstream mainBranch(metadata / "branches" / "main");
+
+    if (!mainBranch) {
+        return false;
+    }
+
+    mainBranch << '\n';
+    mainBranch.close();
+
+    if (!mainBranch) {
+        return false;
+    }
+
     return isInitialized();
 }
