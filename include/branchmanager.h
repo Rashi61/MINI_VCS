@@ -25,8 +25,6 @@ public:
     bool branchExists(const std::string& branchName) const;
 std::string getBranchCommit(const std::string& branchName) const;
 std::string getCurrentCommit() const;
-bool updateBranchCommit(const std::string& branchName,
-                        const std::string& commitId);
 };
 
 #endif

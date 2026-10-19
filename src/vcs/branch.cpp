@@ -230,23 +230,3 @@ std::string BranchManager::getCurrentCommit() const {
     return getBranchCommit(getCurrentBranch());
 }
 
-bool BranchManager::updateBranchCommit(const std::string& branchName,
-                                       const std::string& commitId) {
-    if (!branchExists(branchName) || commitId.empty()) return false;
-
-    const auto dir = metadataPath / "branches";
-    const auto tempPath = dir / (branchName + ".tmp");
-    std::error_code ec;
-
-    {
-        std::ofstream out(tempPath);
-        if (!out) return false;
-        out << commitId << '\n';
-        out.close();
-        if (!out) { std::filesystem::remove(tempPath, ec); return false; }
-    }
-
-    std::filesystem::rename(tempPath, dir / branchName, ec);
-    if (ec) { std::filesystem::remove(tempPath, ec); return false; }
-    return true;
-}

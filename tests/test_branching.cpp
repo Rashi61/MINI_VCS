@@ -29,8 +29,6 @@ int main() {
     assert(bm.getCurrentBranch() == "feature");
     assert(!bm.switchBranch("ghost"));         // doesn't exist
 
-    assert(bm.updateBranchCommit("feature", "c2"));
-    assert(bm.getCurrentCommit() == "c2");
     assert(bm.getBranchCommit("main") == "c1"); // main unaffected
 
     assert(!bm.deleteBranch("feature"));       // current branch
