@@ -1,0 +1,20 @@
+cmake_minimum_required(VERSION 3.16)
+
+project(MiniVCS LANGUAGES C CXX)
+# Member 3 Module
+
+add_executable(Member3Demo
+    tests/member3_demo.cpp
+    src/Member3.cpp
+    sqlite3.c
+)
+
+
+target_include_directories(Member3Demo PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+target_compile_features(Member3Demo PRIVATE cxx_std_17)
+
+target_link_libraries(Member3Demo PRIVATE bcrypt)
