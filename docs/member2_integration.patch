@@ -1,0 +1,36 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 794e3e4..adea6f6 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -16,6 +16,7 @@ add_executable(minivcs
+     src/security/HashManager.cpp
+     src/vcs/commit.cpp
+     src/vcs/CommitManager.cpp
++    src/vcs/branch.cpp
+     src/RetentionManager.cpp
+ )
+ 
+diff --git a/src/repository/repository.cpp b/src/repository/repository.cpp
+index 1bcf59e..44486f3 100644
+--- a/src/repository/repository.cpp
++++ b/src/repository/repository.cpp
+@@ -111,5 +111,19 @@ bool Repository::init() const {
+     if (!head) {
+         return false;
+     }
++        // Create the initial main branch with no commits.
++    std::ofstream mainBranch(metadata / "branches" / "main");
++
++    if (!mainBranch) {
++        return false;
++    }
++
++    mainBranch << '\n';
++    mainBranch.close();
++
++    if (!mainBranch) {
++        return false;
++    }
++
+     return isInitialized();
+ }
