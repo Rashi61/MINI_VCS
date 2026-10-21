@@ -427,7 +427,7 @@ Before declaring the project fully complete, the team should:
 7. Validate database/file-system consistency.
 8. Run a clean end-to-end workflow on Windows and macOS.
 9. Update the final report with actual commands, outputs, limitations, and screenshots.
-10. Merge the reviewed Phase-II integration branch into `main` only after the evaluator checkpoint is complete.
+10. The Phase-II integration has been merged into main. Further work remains for merge conflict handling, frontend-backend integration, remote operations, cross-platform authentication, and complete automated test coverage.
 
 ## 11. Demonstration Workflow
 
@@ -446,5 +446,3 @@ minivcs branches
 minivcs switch main
 minivcs auth
 ```
-
-For the evaluator, explain clearly which features are implemented and tested, which were manually demonstrated, and which remain planned. This distinction is part of the current project status and should not be hidden.
