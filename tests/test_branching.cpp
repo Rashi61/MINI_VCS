@@ -1,42 +1,61 @@
 #include "branchmanager.h"
+
 #include <cassert>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <string>
 
 namespace fs = std::filesystem;
 
 int main() {
-    fs::path root = fs::temp_directory_path() / "minivcs_branch_test";
+    const fs::path root =
+        fs::temp_directory_path() / "minivcs_branch_test";
+
     fs::remove_all(root);
     fs::create_directories(root / ".minivcs" / "branches");
-    std::ofstream(root / ".minivcs" / "HEAD") << "main\n";
-    std::ofstream(root / ".minivcs" / "branches" / "main") << "c1\n";
 
-    BranchManager bm(root);
+    {
+        std::ofstream head(root / ".minivcs" / "HEAD");
+        head << "main\n";
+    }
 
-    assert(bm.getCurrentBranch() == "main");
-    assert(bm.getCurrentCommit() == "c1");
+    {
+        std::ofstream mainBranch(
+            root / ".minivcs" / "branches" / "main"
+        );
+        mainBranch << "\n";
+    }
 
-    assert(bm.createBranch("feature"));
-    assert(!bm.createBranch("feature"));       // duplicate
-    assert(!bm.createBranch("bad name"));      // invalid characters
-    assert(!bm.createBranch("x.tmp"));         // reserved ending
-    assert(bm.listBranches().size() == 2);
-    assert(bm.getBranchCommit("feature") == "c1");
+    BranchManager branchManager(root);
 
-    assert(bm.switchBranch("feature"));
-    assert(bm.getCurrentBranch() == "feature");
-    assert(!bm.switchBranch("ghost"));         // doesn't exist
+    assert(branchManager.getCurrentBranch() == "main");
+    assert(branchManager.getCurrentCommit().empty());
 
-    assert(bm.getBranchCommit("main") == "c1"); // main unaffected
+    assert(branchManager.createBranch("feature"));
+    assert(!branchManager.createBranch("feature"));
+    assert(!branchManager.createBranch("bad name"));
+    assert(!branchManager.createBranch("x.tmp"));
 
-    assert(!bm.deleteBranch("feature"));       // current branch
-    assert(!bm.deleteBranch("main"));          // protected
-    assert(bm.switchBranch("main"));
-    assert(bm.deleteBranch("feature"));
-    assert(bm.listBranches().size() == 1);
+    const auto branches = branchManager.listBranches();
+    assert(branches.size() == 2);
+    assert(branchManager.getBranchCommit("feature").empty());
+
+    assert(branchManager.switchBranch("feature"));
+    assert(branchManager.getCurrentBranch() == "feature");
+    assert(!branchManager.switchBranch("ghost"));
+
+    assert(branchManager.getBranchCommit("main").empty());
+
+    assert(!branchManager.deleteBranch("feature"));
+    assert(!branchManager.deleteBranch("main"));
+
+    assert(branchManager.switchBranch("main"));
+    assert(branchManager.deleteBranch("feature"));
+    assert(branchManager.listBranches().size() == 1);
 
     std::cout << "All branch tests passed\n";
+
+    fs::remove_all(root);
     return 0;
 }

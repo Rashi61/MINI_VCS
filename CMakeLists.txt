@@ -39,6 +39,25 @@ else()
     )
 endif()
 
+add_executable(minivcs_branch_tests
+    tests/test_branching.cpp
+    src/vcs/branch.cpp
+    src/vcs/CommitManager.cpp
+    src/vcs/commit.cpp
+    src/vcs/FileManager.cpp
+    src/security/HashManager.cpp
+    src/RetentionManager.cpp
+    src/vcs/DiffManager.cpp
+)
+
+target_include_directories(minivcs_branch_tests PRIVATE
+    include
+)
+
+target_link_libraries(minivcs_branch_tests PRIVATE
+    OpenSSL::Crypto
+)
+
 enable_testing()
 
 find_package(Python3 COMPONENTS Interpreter QUIET)
@@ -58,3 +77,10 @@ if(Python3_Interpreter_FOUND)
                 $<TARGET_FILE:minivcs>
     )
 endif()
+
+add_test(
+    NAME minivcs_branch_tests
+    COMMAND minivcs_branch_tests
+)
+
+
