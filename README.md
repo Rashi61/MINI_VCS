@@ -1,309 +1,450 @@
-# MiniVCS: Mini Version Control System with Remote Repository and Smart Version Retention
+# MiniVCS
 
-MiniVCS is a mini version control system designed to help users manage project files, track changes, maintain commit history, and recover previous versions of their work. Inspired by the basic concepts of Git, the project aims to provide a simple system for managing repositories, commits, branches, and file versions through a web-based interface.
+MiniVCS is a lightweight version-control system developed as a B.Tech DSCPP-III project. It is designed to demonstrate the core ideas behind repository management, file tracking, commits, snapshots, restoration, branches, metadata storage, authentication, permissions, and future remote-repository support.
 
-The project is being developed as part of the B.Tech DSCPP-III (2026) project.
+The project currently consists of a C++ command-line backend, a local file-system storage layer, SQLite metadata/authentication support, and an initial frontend/remote-repository structure.
 
----
+## 1. Current Phase-II Status
 
-## 1. Project Overview
+The Phase-II integration branch combines the core backend, branch-management functionality, and the database/authentication module.
 
-Managing multiple versions of project files manually can become difficult when files are updated frequently. Keeping separate copies makes it harder to identify the latest version, track changes, and restore an earlier state.
+### Implemented and validated
 
-MiniVCS aims to simplify this process by providing a centralized way to organize project files and maintain their version history.
+- Repository initialization.
+- Repository-root discovery from nested directories.
+- File tracking with `add`.
+- File removal from tracking with `remove`.
+- Tracked-file listing.
+- SHA-256 file hashing using OpenSSL.
+- Commit creation with commit messages.
+- Commit snapshots stored inside `.minivcs`.
+- Parent-commit links.
+- Commit history traversal.
+- Status reporting for modified, missing, untracked, and staged files.
+- Restoration of previous commit snapshots.
+- Safe restore that refuses to overwrite local edits unless `--force` is used.
+- `.minivcsignore` and built-in ignore rules.
+- Detection and reporting of damaged commit or branch history.
+- Retention configuration and cleanup of expired snapshots.
+- Branch creation, listing, switching, and deletion.
+- Branch pointer updates and checkout restoration.
+- SQLite database initialization.
+- User registration and login.
+- Password hashing and verification using the Windows CNG/BCrypt API.
+- Repository metadata and collaborator-role operations in the database module.
+- CMake-based Windows build using MSVC, vcpkg, OpenSSL, and SQLite.
 
-The system is designed to support repository creation, file management, commits, commit history, snapshots, version restoration, branching, merging, user authentication, access permissions, and remote-repository functionality.
+### Manually tested during Phase II
 
-The project combines a C++ backend, a web-based frontend, and an SQLite database. The backend handles version-control operations, the frontend provides the user interface, and the database stores metadata related to users, repositories, and commits.
+- Clean repository initialization and repeated initialization.
+- Adding files and committing snapshots.
+- Running commands from a nested repository directory.
+- Detecting file edits and missing files.
+- Restoring an earlier commit.
+- Force restoration while preserving the branch pointer.
+- Branch creation and listing.
+- Switching between `main` and a feature branch.
+- Deleting a feature branch.
+- User registration.
+- Login with a correct password.
+- Rejection of an incorrect password.
+- Logout.
+- Storage of the authentication database inside the repository `.minivcs` directory.
 
-**Current development status:** The initial project structure has been established. Basic repository creation, file addition, and commit operations have been implemented at an initial level. The SQLite schema and basic database operations are available, and the initial frontend layout has been prepared. Several features remain under development and require integration and testing.
+### Not yet complete
 
----
+- Full merge implementation with automatic three-way merge and conflict markers.
+- Complete frontend-to-backend integration.
+- Remote repository operations and synchronization.
+- Cross-platform authentication implementation for macOS and Linux.
+- Complete automated tests for branch management and database/authentication operations.
+- Final end-to-end testing across all team modules and operating systems.
 
-## 2. Project Objectives
+The project should not claim that merge, remote repository support, frontend-backend integration, or cross-platform authentication are complete until they have been implemented and tested.
 
-The main objectives of MiniVCS are:
-
-- To create and manage repositories for organizing project files.
-- To allow users to add files and track their changes.
-- To record changes through commits with relevant metadata.
-- To maintain commit history for tracking project development.
-- To create snapshots of files so that earlier versions can be recovered.
-- To support branches for developing different versions of a project independently.
-- To support merging changes from different branches.
-- To identify file modifications using SHA-256 hashing.
-- To provide user registration, login, and access permissions.
-- To develop a web-based interface for interacting with version-control features.
-- To explore remote-repository support for managing repositories across different locations.
-- To maintain consistency between database records and files stored on disk.
-
----
-
-## 3. Features and Development Status
-
-The following table describes the current implementation status of the major features.
-
-| Feature | Description | Status |
-|---|---|---|
-| Repository Creation | Create repositories for organizing project files. | Implemented at a basic level |
-| File Management | Add files to a repository. | Basic implementation available |
-| Commit Management | Record file changes through commits. | Basic implementation available |
-| Database Schema | Store metadata using SQLite tables. | Initial schema created |
-| Database Operations | Perform basic insert and read operations. | Basic operations tested |
-| User Registration | Store user registration information. | Initial implementation available |
-| User Login | Implement basic login functionality. | Initial implementation available |
-| File Hashing | Use SHA-256 to identify changes in file contents. | Part of the design; further validation required |
-| Commit History | Display the history of repository changes. | Further implementation and testing required |
-| Snapshot Management | Preserve versions of files. | In progress |
-| File Restoration | Restore files to an earlier version. | Pending completion and testing |
-| Branch Management | Maintain separate development branches. | In progress |
-| Branch Merging | Combine changes from different branches. | In progress |
-| Access Permissions | Restrict access based on user permissions. | Further implementation required |
-| Web Interface | Provide screens for repositories, commits, branches, and users. | Initial layout prepared |
-| Frontend-Backend Integration | Connect interface controls to backend operations. | Pending |
-| Remote Repository | Support remote-repository operations. | Under development |
-| End-to-End Testing | Test the complete application workflow. | Pending |
-
-*Note: Features listed as in progress or pending should not be considered fully functional until their implementation and testing are complete.*
-
----
-
-## 4. Technology Stack
-
-MiniVCS uses the following technologies.
+## 2. Technology Stack
 
 ### Backend
-- **C++:** Implements repository management, file handling, commit operations, and other version-control functionality.
-- **Object-Oriented Programming:** Organizes the backend into classes with separate responsibilities.
 
-### Frontend
-- **HTML:** Defines the structure of the web interface.
-- **CSS:** Handles the layout and visual styling.
-- **JavaScript:** Intended to provide interactive frontend functionality and support communication with the backend.
+- C++17.
+- CMake 3.20 or later.
+- Object-oriented backend modules.
+- Windows MSVC or another C++17-compatible compiler.
+
+### Security and hashing
+
+- OpenSSL Crypto for SHA-256 file hashing.
+- Windows CNG/BCrypt PBKDF2-HMAC-SHA256 for the current Windows authentication implementation.
 
 ### Database
-- **SQLite:** Stores metadata associated with users, repositories, commits, and other project entities.
 
-### Storage
-- **Local File System:** Stores project files and saved file versions.
-- **SHA-256 Hashing:** Helps identify whether file contents have changed by comparing their hashes.
+- SQLite amalgamation source included under `third_party/sqlite3`.
+- SQLite stores user, repository metadata, and collaborator information.
+- Versioned project files and snapshots remain stored on the local file system.
 
-### Development Tools
-- **Git:** Tracks source-code changes and supports collaboration.
-- **GitHub:** Hosts the project repository and its development branches.
-- **C++ Compiler:** Required to compile the backend.
-- **SQLite:** Used for database storage and operations.
-- **Web Browser:** Used to view and test the frontend.
+### Frontend and remote layer
 
----
+- Initial HTML/CSS/JavaScript frontend structure.
+- Remote-repository files are under development and are not yet part of the complete backend workflow.
 
-## 5. System Architecture
-
-MiniVCS is organized into three main components: the frontend, the version-control backend, and the storage layer.
-
-### 5.1 Frontend Layer
-
-The frontend is developed using HTML, CSS, and JavaScript.
-
-It provides the interface through which users are intended to interact with the system.
-
-The planned interface includes:
-
-- Repository management screens.
-- Commit history views.
-- Branch management screens.
-- User registration and login screens.
-- Controls for performing version-control operations.
-
-The initial frontend layout has been prepared. However, the interface is not yet connected to the C++ backend, so the controls cannot currently execute the complete version-control workflow.
-
-### 5.2 Backend Layer
-
-The backend is implemented in C++ and is responsible for performing version-control operations.
-
-The backend is organized into separate classes to improve modularity and make development and testing easier.
-
-The planned responsibilities of the main classes are described below.
-
-| Component | Responsibility |
-|---|---|
-| Repository | Handles repository-related operations. |
-| FileManager | Manages project files and file-related operations. |
-| Commit | Represents a commit and its associated information. |
-| CommitManager | Handles commit creation and commit-related operations. |
-| HashManager | Calculates and compares SHA-256 hashes to identify changes. |
-| BranchManager | Intended to manage branches and branch-related operations. |
-
-The core repository and commit functionality has been implemented at an initial level. Branching, merging, snapshot management, and other operations require additional development and validation.
-
-### 5.3 Storage Layer
-
-MiniVCS uses SQLite for metadata storage and the local file system for actual project files and saved versions.
-
-The database is intended to maintain information such as:
-
-- User information.
-- Repository details.
-- Commit metadata.
-- Relationships between repositories and their commits.
-- Other information required by the implemented modules.
-
-The database schema currently contains five tables.
-
-The actual project files and saved versions are stored on disk rather than directly in the database.
-
-Maintaining consistency between the database and the file system is an important requirement. For example, a commit should not be treated as successfully completed if its required snapshot has not been saved correctly.
-
----
-
-## 6. Working Principle
-
-The intended MiniVCS workflow is described below.
-
-### Step 1: Repository Creation
-
-A user creates a repository to organize project files.
-
-The repository-related information is stored using the backend and the database.
-
-### Step 2: Adding Files
-
-The user adds files to the repository.
-
-The backend manages the file-related operations and prepares the files for version tracking.
-
-### Step 3: Detecting Changes
-
-SHA-256 hashing is intended to help identify modifications to tracked files.
-
-The hash of a file can be compared with the hash of its previously saved version.
-
-If the hashes differ, the file contents have changed.
-
-### Step 4: Creating Commits
-
-A commit represents a recorded state of the project.
-
-The intended commit metadata includes:
-
-- Commit ID.
-- Commit message.
-- Date and time.
-- Author information.
-- Reference to the previous commit, where applicable.
-
-The commit-related functionality has an initial implementation, while snapshot handling and complete version-history support require further work.
-
-### Step 5: Maintaining Version History
-
-The system is intended to maintain a sequence of commits so users can track changes over time.
-
-Each commit should be associated with the appropriate repository and saved version information.
-
-### Step 6: Restoring Previous Versions
-
-The planned restoration feature will allow users to recover an earlier saved state of their files.
-
-This requires reliable snapshot storage, commit-history tracking, and restoration logic.
-
-The complete restoration workflow has not yet been validated.
-
-### Step 7: Branching and Merging
-
-Branches are intended to allow different versions of a project to be developed independently.
-
-The merging feature will combine changes from different branches.
-
-If conflicting changes are detected, the system should identify the conflict instead of silently overwriting one version with another.
-
-Branching and merging are still under development.
-
-### Step 8: User Access and Remote Repositories
-
-The project also aims to support user authentication, access permissions, and remote-repository functionality.
-
-These features require additional implementation and testing before they can be considered complete.
-
----
-
-## 7. Database Design
-
-SQLite is used to store project metadata.
-
-The database schema has been created with five tables. Basic insert and read operations have been implemented and tested.
-
-The database is intended to support operations related to users, repositories, commits, and the relationships between them.
-
-The exact responsibilities and relationships of the tables should be documented alongside the final schema.
-
-### Database Responsibilities
-
-- Store user-related information.
-- Maintain repository metadata.
-- Store commit-related information.
-- Support retrieval of stored records.
-- Maintain relationships required by the backend.
-- Support authentication and access-control operations as they are completed.
-
-### Data Storage Approach
-
-MiniVCS separates metadata storage from file storage.
-
-- **SQLite database:** Stores structured metadata.
-- **Local file system:** Stores actual project files and saved versions.
-
-Further testing is required to verify that database records remain consistent with the corresponding files and snapshots.
-
----
-
-## 8. Project Structure
-
-The project is organized into separate modules to support independent development and testing.
-
-The following is the intended high-level structure. The exact directory and file names should be updated to match the actual GitHub repository.
+## 3. Repository Structure
 
 ```text
-MINI_VCS/
-│
-├── README.md
+MiniVCS/
 ├── CMakeLists.txt
-│
-├── src/
-│   ├── Repository.cpp
-│   ├── FileManager.cpp
-│   ├── Commit.cpp
-│   ├── CommitManager.cpp
-│   ├── HashManager.cpp
-|   ├── RetentionManager.cpp
-|   ├── RemoteManager.cpp
-│   └── BranchManager.cpp
-│
+├── README.md
 ├── include/
-│   ├── Repository.h
-│   ├── FileManager.h
 │   ├── Commit.h
 │   ├── CommitManager.h
+│   ├── DiffManager.h
+│   ├── FileManager.h
 │   ├── HashManager.h
-|   ├── RetentionManager.h
-|   ├── RemoteManager.h
-│   └── BranchManager.h
-│
-├── frontend/
-│   ├── index.html
-│   ├── history.html
-│   ├── repositories.html
-│   ├── retention.html
-│   ├── css/
-│   │   └── remote-retention.css
-│   ├── js/
-│   │   └── remote-retention.js
-│   └── assets/
-│
-├── database/
-│   └── schema.sql
-│
-├── repositories/
-│
+│   ├── RetentionManager.h
+│   ├── member3.h
+│   └── repository.h
+├── src/
+│   ├── main.cpp
+│   ├── member3.cpp
+│   ├── RetentionManager.cpp
+│   ├── repository/
+│   │   └── repository.cpp
+│   ├── security/
+│   │   └── HashManager.cpp
+│   └── vcs/
+│       ├── CommitManager.cpp
+│       ├── DiffManager.cpp
+│       ├── FileManager.cpp
+│       ├── IgnoreMatcher.cpp
+│       ├── branch.cpp
+│       └── commit.cpp
 ├── tests/
-│
+│   ├── run_tests.py
+│   ├── member1_regressions.py
+│   └── member3_demo.cpp
+├── third_party/
+│   └── sqlite3/
+│       ├── sqlite3.c
+│       └── sqlite3.h
+├── frontend/
 └── docs/
+```
+
+A MiniVCS repository created by the program contains internal metadata similar to:
+
+```text
+project/
+├── .minivcs/
+│   ├── HEAD
+│   ├── branches/
+│   ├── commits/
+│   ├── objects/
+│   ├── snapshots/
+│   └── minivcs_users.db
+└── project files
+```
+
+## 4. Building on Windows
+
+The current integrated backend was validated on Windows using Visual Studio Build Tools, MSVC, CMake, vcpkg, OpenSSL, and the SQLite amalgamation source.
+
+Install or enable the following components:
+
+- Desktop development with C++.
+- MSVC x64/x86 build tools.
+- Windows SDK.
+- C++ CMake tools for Windows.
+- CMake.
+- Python 3.
+
+Install OpenSSL through vcpkg:
+
+```powershell
+C:\vcpkg\vcpkg.exe install openssl:x64-windows
+```
+
+Configure the project:
+
+```powershell
+cd C:\Users\avnis\Documents\MiniVCS
+
+Remove-Item -Recurse -Force build -ErrorAction SilentlyContinue
+
+cmake -S . -B build `
+  -G "Visual Studio 17 2022" `
+  -A x64 `
+  -DCMAKE_TOOLCHAIN_FILE=C:\vcpkg\scripts\buildsystems\vcpkg.cmake `
+  -DVCPKG_TARGET_TRIPLET=x64-windows
+```
+
+The equivalent one-line command is:
+
+```powershell
+cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_TOOLCHAIN_FILE=C:\vcpkg\scripts\buildsystems\vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-windows
+```
+
+Build:
+
+```powershell
+cmake --build build --config Debug
+```
+
+The executable is created at:
+
+```text
+build\Debug\minivcs.exe
+```
+
+## 5. Running the Automated Tests
+
+Run the registered CTest tests:
+
+```powershell
+ctest --test-dir build -C Debug --output-on-failure
+```
+
+Run the main command-line test suite directly:
+
+```powershell
+python tests\run_tests.py .\build\Debug\minivcs.exe
+```
+
+Run the Member 1 regression tests directly:
+
+```powershell
+python tests\member1_regressions.py .\build\Debug\minivcs.exe
+```
+
+The Phase-II Windows validation performed so far reported:
+
+```text
+CTest: 2/2 tests passed
+Main CLI suite: 99 passed, 0 failed, 5 skipped
+Member 1 regression suite: all tests passed
+```
+
+The skipped cases represent branch, merge, and SQLite/authentication coverage that was not yet fully converted into automated tests. Manual branch and authentication checks were performed separately.
+
+## 6. Command Reference
+
+### Display help
+
+```powershell
+minivcs
+```
+
+### Initialize a repository
+
+```powershell
+minivcs init
+```
+
+### Add a file
+
+```powershell
+minivcs add <file>
+```
+
+### Remove a tracked file
+
+```powershell
+minivcs remove <file>
+```
+
+### List tracked files
+
+```powershell
+minivcs tracked
+```
+
+### Calculate a file hash
+
+```powershell
+minivcs hash <file>
+```
+
+### Create a commit
+
+```powershell
+minivcs commit "commit message"
+```
+
+### View commit history
+
+```powershell
+minivcs history
+```
+
+### View repository status
+
+```powershell
+minivcs status
+```
+
+### Restore a commit
+
+```powershell
+minivcs restore <commit-id-or-prefix>
+```
+
+To force restoration over local edits:
+
+```powershell
+minivcs restore <commit-id-or-prefix> --force
+```
+
+### Display commit details
+
+```powershell
+minivcs show <commit-id-or-prefix>
+```
+
+### Compare versions
+
+```powershell
+minivcs diff
+minivcs diff <commit-id-or-prefix>
+minivcs diff <older-commit> <newer-commit>
+```
+
+### Manage retention
+
+```powershell
+minivcs retention status
+minivcs retention set <days>
+minivcs retention cleanup
+minivcs retention cleanup --dry-run
+minivcs retention log
+```
+
+### Manage branches
+
+```powershell
+minivcs branch create <name>
+minivcs branches
+minivcs switch <name>
+minivcs switch <name> --force
+minivcs delete-branch <name>
+```
+
+### Authentication and metadata menu
+
+Authentication is currently exposed through an interactive menu:
+
+```powershell
+minivcs auth
+```
+
+The menu currently supports registration, login, logout, login-status checks, repository metadata creation/listing, and collaborator operations.
+
+The database is stored in:
+
+```text
+<repository-root>/.minivcs/minivcs_users.db
+```
+
+## 7. Design Notes
+
+### Repository discovery
+
+Commands executed inside a repository subdirectory search upward for the nearest initialized repository root. This allows commands such as `status`, `add`, `commit`, and `auth` to work from nested directories.
+
+### File storage
+
+The working files remain in the project directory. MiniVCS stores commit metadata, branch pointers, and snapshots under `.minivcs`.
+
+### Commit history
+
+Each commit stores its metadata and parent reference. Corrupt or unreadable history is reported as an error rather than being silently treated as an empty repository.
+
+### Ignore rules
+
+MiniVCS applies built-in ignored directories and entries from `.minivcsignore`. Ignored paths are not added to tracking.
+
+### Branches
+
+Branches are represented by pointers under `.minivcs/branches`. Switching branches restores the selected commit snapshot without changing the commit history or silently overwriting local edits unless the force option is supplied.
+
+### Database and file-system separation
+
+SQLite stores structured metadata such as users, repository records, and collaborator roles. Commit objects and file snapshots remain in the `.minivcs` file-system storage. The two layers still require further end-to-end consistency checks before the system can be considered complete.
+
+## 8. Known Limitations
+
+- Merge and conflict resolution are not complete.
+- The current authentication password-hashing implementation uses Windows CNG/BCrypt and has been validated on Windows. macOS/Linux authentication requires a portable implementation or separate platform backend.
+- Branch and authentication tests are currently partly manual and should be converted to automated CTest coverage.
+- The frontend is not yet connected to the complete C++ command-line backend.
+- Remote repository operations are under development.
+- The database metadata and file-system repository state do not yet have complete transactional synchronization.
+- The current Phase-II branch should be treated as an integrated development branch until it has been reviewed and merged into `main`.
+
+## 9. Team Contributions
+
+### Member 1: Core backend and integration
+
+- Repository initialization and repository-root discovery.
+- File tracking and ignore handling.
+- Commit and snapshot management.
+- Status, history, restoration, and retention functionality.
+- Corrupt-history reporting.
+- Branch pointer and checkout APIs.
+- CMake/build integration.
+- Cross-member integration and Windows validation.
+
+### Member 2: Branch management
+
+- Branch creation.
+- Branch listing.
+- Branch switching and checkout integration.
+- Branch deletion.
+- Branch pointer behavior and integration with the core commit manager.
+- Further automated branch testing and merge/conflict implementation remain.
+
+### Member 3: Database and authentication
+
+- SQLite amalgamation integration.
+- Database schema initialization.
+- User registration and login.
+- Password hashing and verification.
+- Repository metadata and collaborator-role operations.
+- Further automated tests and cross-platform authentication remain.
+
+### Member 4: Frontend and remote-repository work
+
+- Initial frontend structure and retention-related frontend files.
+- Remote-repository work remains to be integrated and tested with the backend.
+
+## 10. Phase-II Completion Plan
+
+Before declaring the project fully complete, the team should:
+
+1. Add automated branch-management tests.
+2. Add automated SQLite/authentication tests.
+3. Implement and test merge behavior with conflict detection.
+4. Integrate and test the frontend with the backend.
+5. Complete remote-repository functionality.
+6. Decide on and implement cross-platform authentication.
+7. Validate database/file-system consistency.
+8. Run a clean end-to-end workflow on Windows and macOS.
+9. Update the final report with actual commands, outputs, limitations, and screenshots.
+10. Merge the reviewed Phase-II integration branch into `main` only after the evaluator checkpoint is complete.
+
+## 11. Demonstration Workflow
+
+A concise backend demonstration can use the following sequence:
+
+```powershell
+minivcs init
+"first version" | Set-Content file.txt
+minivcs add file.txt
+minivcs commit "initial commit"
+minivcs status
+minivcs history
+minivcs branch create feature
+minivcs switch feature
+minivcs branches
+minivcs switch main
+minivcs auth
+```
+
+For the evaluator, explain clearly which features are implemented and tested, which were manually demonstrated, and which remain planned. This distinction is part of the current project status and should not be hidden.

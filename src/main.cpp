@@ -10,12 +10,14 @@
 #include <vector>
 
 #include "FileManager.h"
+#include "IgnoreMatcher.h"
 #include "repository.h"
 #include "HashManager.h"
 #include "CommitManager.h"
 #include "DiffManager.h"
+#include "branchmanager.h"
 #include "RetentionManager.h"
-
+#include "member3.h"
 namespace {
 
 struct IgnoreRules {
@@ -112,6 +114,7 @@ int main(int argc, char* argv[]) {
     if (argc < 2) {
         std::cout << "MiniVCS - Mini Version Control System\n";
         std::cout << "Commands:\n";
+        std::cout << "  minivcs auth\n";
         std::cout << "  minivcs init [project-path]\n";
         std::cout << "  minivcs add <file>\n";
         std::cout << "  minivcs remove <file>\n";
@@ -125,6 +128,10 @@ int main(int argc, char* argv[]) {
         std::cout << "  minivcs diff [<commit>] [<commit>]\n";
         std::cout << "  minivcs retention [status|set <days>|cleanup "
                      "[--dry-run]|log]\n";
+        std::cout<< "  minivcs branch create <name>\n";
+        std::cout<< "  minivcs branches\n";
+        std::cout<< "  minivcs switch <name> [--force]\n";
+        std::cout<< "  minivcs delete-branch <name>\n";
         return 0;
     }
 
@@ -174,16 +181,160 @@ int main(int argc, char* argv[]) {
         std::cout << "SHA-256: " << hash << '\n';
         return 0;
     }
+    // ===== Member 3: Authentication and Database Management =====
 
-    Repository repository(std::filesystem::current_path());
-    if (!repository.isInitialized()) {
+if (command == "auth") {
+        const auto discoveredRoot =
+        Repository::discoverRoot(
+            std::filesystem::current_path()
+        );
+
+    if (!discoveredRoot.has_value()) {
         std::cerr
-            << "Error: current directory is not an initialized "
-            << "MiniVCS repository.\n";
-        std::cerr
-            << "Change into your project directory and try again.\n";
+            << "Error: current directory is not inside an "
+            << "initialized MiniVCS repository.\n";
         return 1;
     }
+
+    const std::filesystem::path databasePath =
+        *discoveredRoot /
+        ".minivcs" /
+        "minivcs_users.db";
+
+    Member3 member3(databasePath.string());
+
+    if (!member3.initializeDatabase()) {
+        std::cerr << "Database initialization failed.\n";
+        return 1;
+    }
+
+    int choice;
+
+    do {
+        std::cout << "\n===== MiniVCS Member 3 Menu =====\n";
+        std::cout << "1. Register User\n";
+        std::cout << "2. Login\n";
+        std::cout << "3. Logout\n";
+        std::cout << "4. Check Login Status\n";
+        std::cout << "5. Create Repository\n";
+        std::cout << "6. View Repositories\n";
+        std::cout << "7. Add Collaborator\n";
+        std::cout << "8. View Collaborators\n";
+        std::cout << "9. Update Collaborator Role\n";
+        std::cout << "10. Remove Collaborator\n";
+        std::cout << "11. Exit\n";
+        std::cout << "Enter your choice: ";
+
+        if (!(std::cin >> choice)) {
+            std::cerr << "Invalid input.\n";
+            return 1;
+        }
+
+        std::string username, email, password, repoName, visibility, role;
+        int repoId;
+
+        switch (choice) {
+
+        case 1:
+            std::cout << "Username: ";
+            std::cin >> username;
+            std::cout << "Email: ";
+            std::cin >> email;
+            std::cout << "Password: ";
+            std::cin >> password;
+            member3.registerUser(username, email, password);
+            break;
+
+        case 2:
+            std::cout << "Username: ";
+            std::cin >> username;
+            std::cout << "Password: ";
+            std::cin >> password;
+            member3.login(username, password);
+            break;
+
+        case 3:
+            member3.logout();
+            break;
+
+        case 4:
+            std::cout << (member3.isLoggedIn()
+                ? "User is logged in.\n"
+                : "No user is logged in.\n");
+            break;
+
+        case 5:
+            std::cout << "Repository name: ";
+            std::cin >> repoName;
+            std::cout << "Visibility (public/private): ";
+            std::cin >> visibility;
+            member3.createRepository(repoName, visibility);
+            break;
+
+        case 6:
+            member3.viewRepositories();
+            break;
+
+        case 7:
+            std::cout << "Repository ID: ";
+            std::cin >> repoId;
+            std::cout << "Collaborator username: ";
+            std::cin >> username;
+            std::cout << "Role: ";
+            std::cin >> role;
+            member3.addCollaborator(repoId, username, role);
+            break;
+
+        case 8:
+            std::cout << "Repository ID: ";
+            std::cin >> repoId;
+            member3.viewCollaborators(repoId);
+            break;
+
+        case 9:
+            std::cout << "Repository ID: ";
+            std::cin >> repoId;
+            std::cout << "Collaborator username: ";
+            std::cin >> username;
+            std::cout << "New role: ";
+            std::cin >> role;
+            member3.updateCollaboratorRole(repoId, username, role);
+            break;
+
+        case 10:
+            std::cout << "Repository ID: ";
+            std::cin >> repoId;
+            std::cout << "Collaborator username: ";
+            std::cin >> username;
+            member3.removeCollaborator(repoId, username);
+            break;
+
+        case 11:
+            std::cout << "Exiting Member 3 menu.\n";
+            break;
+
+        default:
+            std::cout << "Invalid choice.\n";
+        }
+
+    } while (choice != 11);
+
+    return 0;
+}
+
+// ===== Existing Repository Operations =====
+
+   const auto discoveredRoot =
+    Repository::discoverRoot(std::filesystem::current_path());
+
+    if (!discoveredRoot.has_value()) {
+        std::cerr
+            << "Error: current directory is not inside an initialized "
+            << "MiniVCS repository.\n";
+        return 1;
+    }
+
+    Repository repository(*discoveredRoot);
 
     FileManager fileManager(repository.getRootPath());
     if (command == "commit") {
@@ -225,19 +376,36 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    if (command == "history") {
+        if (command == "history") {
         CommitManager commitManager(repository.getRootPath());
-        const auto commits = commitManager.getCommitHistory();
+        const HistoryResult history =
+            commitManager.readCommitHistory();
 
-        if (commits.empty()) {
+        if (!history.valid) {
+            std::cerr
+                << "Error: corrupt repository history: "
+                << history.error << '\n';
+
+            return 1;
+        }
+
+        if (history.commits.empty()) {
             std::cout << "No commits yet.\n";
             return 0;
         }
 
-        for (auto it = commits.rbegin(); it != commits.rend(); ++it) {
-            std::cout << "\nCommit: " << it->getId() << '\n';
-            std::cout << "Message: " << it->getMessage() << '\n';
-            std::cout << "Date: " << it->getTimestamp() << '\n';
+        for (auto it = history.commits.rbegin();
+             it != history.commits.rend();
+             ++it) {
+            std::cout << "\nCommit: "
+                      << it->getId() << '\n';
+
+            std::cout << "Message: "
+                      << it->getMessage() << '\n';
+
+            std::cout << "Date: "
+                      << it->getTimestamp() << '\n';
+
             std::cout << "Parent: "
                       << (it->getParentId().empty()
                               ? std::string("none")
@@ -247,6 +415,7 @@ int main(int argc, char* argv[]) {
 
         return 0;
     }
+
     if (command == "restore") {
         bool force = false;
         std::string requestedId;
@@ -430,7 +599,7 @@ int main(int argc, char* argv[]) {
             }
         }
 
-        const IgnoreRules ignoreRules = loadIgnoreRules(root);
+        const IgnoreMatcher ignoreMatcher(root);
         std::error_code ec;
 
         for (std::filesystem::recursive_directory_iterator it(
@@ -456,7 +625,7 @@ int main(int argc, char* argv[]) {
 
             const auto normalized = relativePath.generic_string();
 
-            if (isIgnored(normalized, ignoreRules)) {
+            if (ignoreMatcher.isIgnored(normalized)) {
                 if (entry.is_directory(ec)) {
                     it.disable_recursion_pending();
                 }
@@ -499,6 +668,16 @@ int main(int argc, char* argv[]) {
         const std::filesystem::path requestedPath(argv[2]);
         const std::string normalizedPath =
             requestedPath.lexically_normal().generic_string();
+        const IgnoreMatcher ignoreMatcher(
+            repository.getRootPath()
+        );
+
+        if (ignoreMatcher.isIgnored(normalizedPath)) {
+            std::cerr
+                << "Cannot add ignored path: "
+                << normalizedPath << '\n';
+            return 1;
+        }
 
         const auto trackedFiles = fileManager.getTrackedFiles();
 
@@ -551,10 +730,129 @@ int main(int argc, char* argv[]) {
     }
 
     // ===== Member 2: branch / switch / merge commands =====
+        if (command == "branch") {
+        if (argc != 4 ||
+            std::string(argv[2]) != "create") {
+            std::cerr
+                << "Usage: minivcs branch create <name>\n";
+            return 1;
+        }
+
+        BranchManager branchManager(
+            repository.getRootPath()
+        );
+
+        if (!branchManager.createBranch(argv[3])) {
+            std::cerr
+                << "Could not create branch.\n";
+            return 1;
+        }
+
+        std::cout
+            << "Branch created: "
+            << argv[3] << '\n';
+
+        return 0;
+    }
+
+    if (command == "branches") {
+        if (argc != 2) {
+            std::cerr
+                << "Usage: minivcs branches\n";
+            return 1;
+        }
+
+        BranchManager branchManager(
+            repository.getRootPath()
+        );
+
+        const auto branches =
+            branchManager.listBranches();
+
+        for (const auto& branch : branches) {
+            if (branch ==
+                branchManager.getCurrentBranch()) {
+                std::cout << "* ";
+            } else {
+                std::cout << "  ";
+            }
+
+            std::cout << branch << '\n';
+        }
+
+        return 0;
+    }
+
+    if (command == "switch") {
+        if (argc < 3 || argc > 4) {
+            std::cerr
+                << "Usage: minivcs switch <name> [--force]\n";
+            return 1;
+        }
+
+        const bool force =
+            argc == 4 &&
+            std::string(argv[3]) == "--force";
+
+        if (argc == 4 && !force) {
+            std::cerr
+                << "Unknown option: "
+                << argv[3] << '\n';
+            return 1;
+        }
+
+        BranchManager branchManager(
+            repository.getRootPath()
+        );
+
+        if (!branchManager.switchBranch(
+                argv[2],
+                force
+            )) {
+            std::cerr
+                << "Could not switch branch. "
+                << "The branch may not exist or "
+                << "the working tree contains "
+                << "conflicting changes.\n";
+            return 1;
+        }
+
+        std::cout
+            << "Switched to branch: "
+            << argv[2] << '\n';
+
+        return 0;
+    }
+
+    if (command == "delete-branch") {
+        if (argc != 3) {
+            std::cerr
+                << "Usage: minivcs delete-branch <name>\n";
+            return 1;
+        }
+
+        BranchManager branchManager(
+            repository.getRootPath()
+        );
+
+        if (!branchManager.deleteBranch(argv[2])) {
+            std::cerr
+                << "Could not delete branch.\n";
+            return 1;
+        }
+
+        std::cout
+            << "Branch deleted: "
+            << argv[2] << '\n';
+
+        return 0;
+    }
 
     // ===== Member 3: user / login / permission commands =====
 
     // ===== Member 4: clone / push / pull commands =====
+
+    
     std::cerr << "Unknown command: " << command << '\n';
     return 1;
 }
