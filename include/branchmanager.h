@@ -7,24 +7,44 @@
 
 class BranchManager {
 private:
+    std::filesystem::path repositoryRoot;
     std::filesystem::path metadataPath;
 
-    bool isValidBranchName(const std::string& branchName) const;
+    bool isValidBranchName(
+        const std::string& branchName
+    ) const;
 
 public:
     explicit BranchManager(
-        const std::filesystem::path& repositoryRoot
+        const std::filesystem::path& rootPath
     );
 
-    bool createBranch(const std::string& branchName);
+    bool createBranch(
+        const std::string& branchName
+    );
+
     std::vector<std::string> listBranches() const;
-    bool switchBranch(const std::string& branchName);
-    bool deleteBranch(const std::string& branchName);
+
+    bool switchBranch(
+        const std::string& branchName,
+        bool force = false
+    );
+
+    bool deleteBranch(
+        const std::string& branchName
+    );
 
     std::string getCurrentBranch() const;
-    bool branchExists(const std::string& branchName) const;
-std::string getBranchCommit(const std::string& branchName) const;
-std::string getCurrentCommit() const;
+
+    bool branchExists(
+        const std::string& branchName
+    ) const;
+
+    std::string getBranchCommit(
+        const std::string& branchName
+    ) const;
+
+    std::string getCurrentCommit() const;
 };
 
 #endif

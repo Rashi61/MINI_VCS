@@ -1,5 +1,6 @@
 #include "branch.h"
 #include "branchmanager.h"
+#include "CommitManager.h"
 
 #include <algorithm>
 #include <cctype>
@@ -23,9 +24,12 @@ void Branch::setHeadCommit(const std::string& commitId) {
 }
 
 BranchManager::BranchManager(
-    const std::filesystem::path& repositoryRoot)
-    : metadataPath(
-          std::filesystem::absolute(repositoryRoot)
+    const std::filesystem::path& rootPath)
+    : repositoryRoot(
+          std::filesystem::absolute(rootPath)
+              .lexically_normal()),
+      metadataPath(
+          std::filesystem::absolute(rootPath)
               .lexically_normal() / ".minivcs") {}
 
 bool BranchManager::isValidBranchName(
@@ -153,23 +157,54 @@ bool BranchManager::createBranch(
 }
 
 bool BranchManager::switchBranch(
-    const std::string& branchName) {
+    const std::string& branchName,
+    bool force
+) {
     if (!isValidBranchName(branchName)) {
         return false;
     }
 
     std::error_code ec;
-    const auto branchPath = metadataPath / "branches" / branchName;
 
-    if (!std::filesystem::is_regular_file(branchPath, ec) || ec) {
+    const auto branchPath =
+        metadataPath / "branches" / branchName;
+
+    if (!std::filesystem::is_regular_file(
+            branchPath,
+            ec
+        ) || ec) {
         return false;
     }
 
-    const auto headPath = metadataPath / "HEAD";
-    const auto tempPath = metadataPath / "HEAD.tmp";
+    std::ifstream branchFile(branchPath);
+
+    if (!branchFile) {
+        return false;
+    }
+
+    std::string commitId;
+    std::getline(branchFile, commitId);
+
+    if (!commitId.empty()) {
+        CommitManager commitManager(repositoryRoot);
+
+        if (!commitManager.checkoutCommit(
+                commitId,
+                force
+            )) {
+            return false;
+        }
+    }
+
+    const auto headPath =
+        metadataPath / "HEAD";
+
+    const auto temporaryHeadPath =
+        metadataPath / "HEAD.tmp";
 
     {
-        std::ofstream output(tempPath);
+        std::ofstream output(temporaryHeadPath);
+
         if (!output) {
             return false;
         }
@@ -178,15 +213,25 @@ bool BranchManager::switchBranch(
         output.close();
 
         if (!output) {
-            std::filesystem::remove(tempPath, ec);
+            std::filesystem::remove(
+                temporaryHeadPath,
+                ec
+            );
             return false;
         }
     }
 
-    std::filesystem::rename(tempPath, headPath, ec);
+    std::filesystem::rename(
+        temporaryHeadPath,
+        headPath,
+        ec
+    );
 
     if (ec) {
-        std::filesystem::remove(tempPath, ec);
+        std::filesystem::remove(
+            temporaryHeadPath,
+            ec
+        );
         return false;
     }
 
