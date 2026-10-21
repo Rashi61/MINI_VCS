@@ -34,6 +34,15 @@ void viewRepositories();
 bool addCollaborator(int repoId,
                      const std::string& username,
                      const std::string& role);
+
+void viewCollaborators(int repoId);
+
+bool updateCollaboratorRole(int repoId,
+                            const std::string& username,
+                            const std::string& newRole);
+
+bool removeCollaborator(int repoId,
+                        const std::string& username);
 };
 
 #endif

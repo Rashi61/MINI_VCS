@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(MiniVCS LANGUAGES CXX)
+project(MiniVCS LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -18,15 +18,25 @@ add_executable(minivcs
     src/RetentionManager.cpp
     src/vcs/DiffManager.cpp
     
-    # --- Member 2 files (branch, merge) ---
+       # --- Member 2 files (branch, merge) ---
 
     # --- Member 3 files (database, auth) ---
+    src/member3.cpp
+    third_party/sqlite3/sqlite3.c
 
-    # --- Member 4 files (remote) ---
+    # --- Member 4 files (remote) --- 
 )
 
-target_include_directories(minivcs PRIVATE include)
-target_link_libraries(minivcs PRIVATE OpenSSL::Crypto)
+target_include_directories(minivcs PRIVATE
+    include
+    third_party/sqlite3
+)
+
+target_link_libraries(minivcs PRIVATE
+    OpenSSL::Crypto
+    bcrypt
+)
+
 
 enable_testing()
 

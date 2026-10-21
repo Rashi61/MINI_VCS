@@ -24,7 +24,10 @@ int main() {
         std::cout << "5. Create Repository\n";
         std::cout << "6. View Repositories\n";
         std::cout << "7. Add Collaborator\n";
-        std::cout << "8. Exit\n";
+        std::cout << "8. View Collaborators\n";
+        std::cout << "9. Update Collaborator Role\n";
+        std::cout << "10. Remove Collaborator\n";
+        std::cout << "11. Exit\n";
 
         std::cout << "Enter your choice: ";
 
@@ -84,29 +87,82 @@ int main() {
                 system.createRepository(repoName, visibility);
                 break;
 
-    case 6:
-    system.viewRepositories();
-    break;
-    case 7: {
-    int repoId;
-    std::string username, role;
+            case 6:
+            system.viewRepositories();
+            break;
+            case 7: {
+            int repoId;
+            std::string username, role;
 
-    std::cout << "Enter Repository ID: ";
-    std::cin >> repoId;
+            std::cout << "Enter Repository ID: ";
+            std::cin >> repoId;
 
-    std::cout << "Enter Collaborator Username: ";
-    std::cin >> username;
+            std::cout << "Enter Collaborator Username: ";
+            std::cin >> username;
 
-    std::cout << "Enter Role (read/write/admin): ";
-    std::cin >> role;
+            std::cout << "Enter Role (read/write/admin): ";
+            std::cin >> role;
 
-    system.addCollaborator(repoId, username, role);
+            system.addCollaborator(repoId, username, role);
 
-    break;
-}
-    case 8:
-    std::cout << "Exiting MiniVCS...\n";
-    return 0;
+            break;
+            }
+
+            case 8: {
+            int repoId;
+
+            std::cout << "Enter Repository ID: ";
+            std::cin >> repoId;
+
+            system.viewCollaborators(repoId);
+
+            break;
+            }
+            case 9:
+            {
+            int repoId;
+            std::string username;
+            std::string newRole;
+
+            std::cout << "Enter Repository ID: ";
+            std::cin >> repoId;
+            std::cin.ignore(
+            std::numeric_limits<std::streamsize>::max(), '\n'
+                );
+
+            std::cout << "Enter Collaborator Username: ";
+            std::getline(std::cin, username);
+
+            std::cout << "Enter New Role (read/write/admin): ";
+            std::getline(std::cin, newRole);
+
+            system.updateCollaboratorRole(repoId, username, newRole);
+            break;
+            }
+
+        case 10:
+        {
+        int repoId;
+        std::string username;
+
+        std::cout << "Enter Repository ID: ";
+        std::cin >> repoId;
+        std::cin.ignore(
+        std::numeric_limits<std::streamsize>::max(), '\n'
+        );
+
+        std::cout << "Enter Collaborator Username: ";
+        std::getline(std::cin, username);
+
+        system.removeCollaborator(repoId, username);
+        break;
+        }
+
+        case 11:
+        {
+        std::cout << "Exiting MiniVCS...\n";
+        return 0;
+        }
 
             default:
                 std::cout << "Invalid choice!\n";
