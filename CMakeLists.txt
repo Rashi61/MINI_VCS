@@ -12,19 +12,15 @@ add_executable(minivcs
     src/main.cpp
     src/repository/repository.cpp
     src/vcs/FileManager.cpp
+    src/vcs/IgnoreMatcher.cpp
     src/security/HashManager.cpp
     src/vcs/commit.cpp
     src/vcs/CommitManager.cpp
     src/RetentionManager.cpp
     src/vcs/DiffManager.cpp
-    
-       # --- Member 2 files (branch, merge) ---
-
-    # --- Member 3 files (database, auth) ---
+    src/vcs/branch.cpp
     src/member3.cpp
     third_party/sqlite3/sqlite3.c
-
-    # --- Member 4 files (remote) --- 
 )
 
 target_include_directories(minivcs PRIVATE
@@ -32,11 +28,16 @@ target_include_directories(minivcs PRIVATE
     third_party/sqlite3
 )
 
-target_link_libraries(minivcs PRIVATE
-    OpenSSL::Crypto
-    bcrypt
-)
-
+if(WIN32)
+    target_link_libraries(minivcs PRIVATE
+        OpenSSL::Crypto
+        bcrypt
+    )
+else()
+    target_link_libraries(minivcs PRIVATE
+        OpenSSL::Crypto
+    )
+endif()
 
 enable_testing()
 
@@ -47,6 +48,13 @@ if(Python3_Interpreter_FOUND)
         NAME minivcs_cli_tests
         COMMAND ${Python3_EXECUTABLE}
                 ${CMAKE_SOURCE_DIR}/tests/run_tests.py
+                $<TARGET_FILE:minivcs>
+    )
+
+    add_test(
+        NAME minivcs_member1_regressions
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_SOURCE_DIR}/tests/member1_regressions.py
                 $<TARGET_FILE:minivcs>
     )
 endif()

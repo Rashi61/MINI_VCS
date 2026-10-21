@@ -1,7 +1,7 @@
 #include <iostream>
 #include <string>
 #include <limits>
-#include "Member3.h"
+#include "member3.h"
 
 int main() {
     Member3 system("minivcs.db");

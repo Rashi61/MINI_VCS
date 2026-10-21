@@ -508,6 +508,89 @@ std::string CommitManager::getLatestCommitId() const {
     return commitId;
 }
 
+bool CommitManager::updateBranchPointer(
+    const std::string& branchName,
+    const std::string& commitId
+) const {
+    namespace fs = std::filesystem;
+
+    if (branchName.empty() ||
+        branchName == "." ||
+        branchName == ".." ||
+        branchName.find_first_of("/\\") != std::string::npos) {
+        std::cerr << "Invalid branch name.\n";
+        return false;
+    }
+
+    if (commitId.empty()) {
+        std::cerr << "Commit ID cannot be empty.\n";
+        return false;
+    }
+
+    Commit commit;
+
+    if (!getCommit(commitId, commit)) {
+        std::cerr
+            << "Cannot update branch to an invalid commit.\n";
+        return false;
+    }
+
+    const fs::path branchPath =
+        metadataPath / "branches" / branchName;
+
+    std::error_code ec;
+
+    if (!fs::is_regular_file(branchPath, ec) || ec) {
+        std::cerr
+            << "Branch does not exist: "
+            << branchName << '\n';
+        return false;
+    }
+
+    const fs::path temporaryPath =
+        metadataPath / "branches" /
+        (branchName + ".tmp");
+
+    {
+        std::ofstream output(
+            temporaryPath,
+            std::ios::out | std::ios::trunc
+        );
+
+        if (!output) {
+            std::cerr
+                << "Could not create temporary branch pointer.\n";
+            return false;
+        }
+
+        output << commit.getId() << '\n';
+        output.close();
+
+        if (!output) {
+            fs::remove(temporaryPath, ec);
+
+            std::cerr
+                << "Could not write branch pointer.\n";
+            return false;
+        }
+    }
+
+    fs::rename(temporaryPath, branchPath, ec);
+
+    if (ec) {
+        std::error_code cleanupError;
+        fs::remove(temporaryPath, cleanupError);
+
+        std::cerr
+            << "Could not replace branch pointer: "
+            << ec.message() << '\n';
+
+        return false;
+    }
+
+    return true;
+}
+
 bool CommitManager::createCommit(const std::string& message) {
     if (message.empty()) {
         std::cerr << "Commit message cannot be empty.\n";
@@ -798,32 +881,175 @@ bool CommitManager::readCommitFile(const std::string& commitId,
         hashes[path] = hash;
     }
 
-    if (hashes.size() != fileCount) {
+        if (hashes.size() != fileCount) {
         return false;
     }
 
-    out = Commit(storedId, message, timestamp, parentId, hashes);
+    std::string unexpectedData;
+
+    if (commitFile >> unexpectedData) {
+        return false;
+    }
+
+    out = Commit(
+        storedId,
+        message,
+        timestamp,
+        parentId,
+        hashes
+    );
+
     return true;
 }
 
-std::vector<Commit> CommitManager::getCommitHistory() const {
-    std::vector<Commit> history;
-    std::unordered_set<std::string> visited;
-    std::string commitId = getLatestCommitId();
+HistoryResult CommitManager::readCommitHistory() const {
+    HistoryResult result;
 
-    while (!commitId.empty() && visited.insert(commitId).second) {
+    std::ifstream headFile(metadataPath / "HEAD");
+    std::string branchName;
+
+    if (!headFile || !std::getline(headFile, branchName)) {
+        result.valid = false;
+        result.error = "HEAD file is missing or unreadable.";
+        return result;
+    }
+
+    if (!branchName.empty() && branchName.back() == '\r') {
+        branchName.pop_back();
+    }
+
+    if (branchName.empty() ||
+        branchName == "." ||
+        branchName == ".." ||
+        branchName.find_first_of("/\\") != std::string::npos) {
+        result.valid = false;
+        result.error = "HEAD contains an invalid branch name.";
+        return result;
+    }
+
+    std::ifstream branchFile(
+        metadataPath / "branches" / branchName
+    );
+
+    if (!branchFile) {
+        result.valid = false;
+        result.error =
+            "current branch file is missing: " + branchName;
+        return result;
+    }
+
+    std::string commitId;
+
+    if (!std::getline(branchFile, commitId)) {
+        result.valid = false;
+        result.error =
+            "current branch file is unreadable: " + branchName;
+        return result;
+    }
+
+    if (!commitId.empty() && commitId.back() == '\r') {
+        commitId.pop_back();
+    }
+
+    // A blank branch file is valid for a newly initialized repository.
+    if (commitId.empty()) {
+        std::string extraLine;
+
+        while (std::getline(branchFile, extraLine)) {
+            if (!extraLine.empty() && extraLine != "\r") {
+                result.valid = false;
+                result.error =
+                    "empty branch contains unexpected data.";
+                return result;
+            }
+        }
+
+        return result;
+    }
+
+    // Check that the branch file contains only one commit ID line.
+    std::string extraLine;
+
+    while (std::getline(branchFile, extraLine)) {
+        if (!extraLine.empty() && extraLine != "\r") {
+            result.valid = false;
+            result.error =
+                "branch file contains unexpected extra data.";
+            result.commits.clear();
+            return result;
+        }
+    }
+
+    std::unordered_set<std::string> visited;
+
+    while (!commitId.empty()) {
+        if (!visited.insert(commitId).second) {
+            result.valid = false;
+            result.error =
+                "commit history contains a parent cycle at " + commitId;
+            result.commits.clear();
+            return result;
+        }
+
+        std::error_code ec;
+        const auto commitPath =
+            objectsPath / commitId / "commit.txt";
+
+        if (!std::filesystem::is_regular_file(commitPath, ec) || ec) {
+            result.valid = false;
+            result.error =
+                "missing commit metadata for " + commitId;
+            result.commits.clear();
+            return result;
+        }
+
         Commit commit;
 
         if (!readCommitFile(commitId, commit)) {
-            break;
+            result.valid = false;
+            result.error =
+                "invalid commit metadata for " + commitId;
+            result.commits.clear();
+            return result;
         }
 
-        commitId = commit.getParentId();
-        history.push_back(std::move(commit));
+        const std::string parentId = commit.getParentId();
+
+        if (!parentId.empty()) {
+            const auto parentPath =
+                objectsPath / parentId / "commit.txt";
+
+            if (!std::filesystem::is_regular_file(parentPath, ec) ||
+                ec) {
+                result.valid = false;
+                result.error =
+                    "missing parent commit " + parentId +
+                    " referenced by " + commitId;
+                result.commits.clear();
+                return result;
+            }
+        }
+
+        result.commits.push_back(std::move(commit));
+        commitId = parentId;
     }
 
-    std::reverse(history.begin(), history.end());
-    return history;
+    std::reverse(
+        result.commits.begin(),
+        result.commits.end()
+    );
+
+    return result;
+}
+
+std::vector<Commit> CommitManager::getCommitHistory() const {
+    const HistoryResult result = readCommitHistory();
+
+    if (!result.valid) {
+        return {};
+    }
+
+    return result.commits;
 }
 
 bool CommitManager::getCommit(const std::string& requestedId,
@@ -1123,4 +1349,10 @@ bool CommitManager::restoreCommit(const std::string& requestedId,
     std::cout << "Files absent from the selected snapshot were preserved.\n";
 
     return true;
+}
+bool CommitManager::checkoutCommit(
+    const std::string& requestedId,
+    bool force
+) {
+    return restoreCommit(requestedId, force);
 }
