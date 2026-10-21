@@ -1,6 +1,8 @@
 
 #include "repository.h"
 
+#include <string>
+#include <istream>
 #include <fstream>
 #include<optional>
 #include <system_error>
