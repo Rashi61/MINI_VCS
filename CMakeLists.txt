@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(MiniVCS LANGUAGES CXX)
+project(MiniVCS LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -16,19 +16,28 @@ add_executable(minivcs
     src/security/HashManager.cpp
     src/vcs/commit.cpp
     src/vcs/CommitManager.cpp
-    src/vcs/branch.cpp
     src/RetentionManager.cpp
     src/vcs/DiffManager.cpp
-
-    # --- Member 2 files (branch, merge) ---
-
-    # --- Member 3 files (database, auth) ---
-
-    # --- Member 4 files (remote) ---
+    src/vcs/branch.cpp
+    src/member3.cpp
+    third_party/sqlite3/sqlite3.c
 )
 
-target_include_directories(minivcs PRIVATE include)
-target_link_libraries(minivcs PRIVATE OpenSSL::Crypto)
+target_include_directories(minivcs PRIVATE
+    include
+    third_party/sqlite3
+)
+
+if(WIN32)
+    target_link_libraries(minivcs PRIVATE
+        OpenSSL::Crypto
+        bcrypt
+    )
+else()
+    target_link_libraries(minivcs PRIVATE
+        OpenSSL::Crypto
+    )
+endif()
 
 enable_testing()
 
@@ -48,5 +57,4 @@ if(Python3_Interpreter_FOUND)
                 ${CMAKE_SOURCE_DIR}/tests/member1_regressions.py
                 $<TARGET_FILE:minivcs>
     )
-
 endif()

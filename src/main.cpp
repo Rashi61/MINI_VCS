@@ -17,11 +17,104 @@
 #include "DiffManager.h"
 #include "branchmanager.h"
 #include "RetentionManager.h"
+#include "member3.h"
+namespace {
+
+struct IgnoreRules {
+    std::vector<std::string> builtIn;
+    std::vector<std::string> userRules;
+};
+
+IgnoreRules loadIgnoreRules(const std::filesystem::path& root) {
+    IgnoreRules rules;
+    rules.builtIn = {".minivcs", ".git", ".vs", ".idea", ".vscode", "out",
+                     "build", "minivcs", "minivcs.exe"};
+
+    std::ifstream input(root / ".minivcsignore");
+    std::string line;
+
+    while (std::getline(input, line)) {
+        while (!line.empty() &&
+               std::isspace(static_cast<unsigned char>(line.back()))) {
+            line.pop_back();
+        }
+
+        std::size_t start = 0;
+        while (start < line.size() &&
+               std::isspace(static_cast<unsigned char>(line[start]))) {
+            ++start;
+        }
+        line = line.substr(start);
+
+        if (line.empty() || line[0] == '#') {
+            continue;
+        }
+
+        while (!line.empty() && line.back() == '/') {
+            line.pop_back();
+        }
+
+        if (!line.empty()) {
+            rules.userRules.push_back(line);
+        }
+    }
+
+    return rules;
+}
+
+bool matchesPath(const std::string& path, const std::string& rule) {
+    return path == rule ||
+           (path.size() > rule.size() &&
+            path.compare(0, rule.size(), rule) == 0 &&
+            path[rule.size()] == '/');
+}
+
+bool matchesComponent(const std::string& path, const std::string& rule) {
+    std::size_t begin = 0;
+
+    while (begin <= path.size()) {
+        std::size_t end = path.find('/', begin);
+        if (end == std::string::npos) {
+            end = path.size();
+        }
+        if (path.compare(begin, end - begin, rule) == 0) {
+            return true;
+        }
+        begin = end + 1;
+    }
+
+    return false;
+}
+
+bool isIgnored(const std::string& path, const IgnoreRules& rules) {
+    const std::string first = path.substr(0, path.find('/'));
+    if (first.rfind("cmake-build-", 0) == 0 || first.rfind("build-", 0) == 0) {
+        return true;
+    }
+
+    for (const auto& rule : rules.builtIn) {
+        if (matchesPath(path, rule)) {
+            return true;
+        }
+    }
+
+    for (const auto& rule : rules.userRules) {
+        if (matchesPath(path, rule) ||
+            (rule.find('/') == std::string::npos &&
+             matchesComponent(path, rule))) {
+            return true;
+        }
+    }
+
+    return false;
+}
+}
 
 int main(int argc, char* argv[]) {
     if (argc < 2) {
         std::cout << "MiniVCS - Mini Version Control System\n";
         std::cout << "Commands:\n";
+        std::cout << "  minivcs auth\n";
         std::cout << "  minivcs init [project-path]\n";
         std::cout << "  minivcs add <file>\n";
         std::cout << "  minivcs remove <file>\n";
@@ -88,6 +181,131 @@ int main(int argc, char* argv[]) {
         std::cout << "SHA-256: " << hash << '\n';
         return 0;
     }
+    // ===== Member 3: Authentication and Database Management =====
+
+if (command == "auth") {
+    Member3 member3("minivcs_users.db");
+
+    if (!member3.initializeDatabase()) {
+        std::cerr << "Database initialization failed.\n";
+        return 1;
+    }
+
+    int choice;
+
+    do {
+        std::cout << "\n===== MiniVCS Member 3 Menu =====\n";
+        std::cout << "1. Register User\n";
+        std::cout << "2. Login\n";
+        std::cout << "3. Logout\n";
+        std::cout << "4. Check Login Status\n";
+        std::cout << "5. Create Repository\n";
+        std::cout << "6. View Repositories\n";
+        std::cout << "7. Add Collaborator\n";
+        std::cout << "8. View Collaborators\n";
+        std::cout << "9. Update Collaborator Role\n";
+        std::cout << "10. Remove Collaborator\n";
+        std::cout << "11. Exit\n";
+        std::cout << "Enter your choice: ";
+
+        if (!(std::cin >> choice)) {
+            std::cerr << "Invalid input.\n";
+            return 1;
+        }
+
+        std::string username, email, password, repoName, visibility, role;
+        int repoId;
+
+        switch (choice) {
+
+        case 1:
+            std::cout << "Username: ";
+            std::cin >> username;
+            std::cout << "Email: ";
+            std::cin >> email;
+            std::cout << "Password: ";
+            std::cin >> password;
+            member3.registerUser(username, email, password);
+            break;
+
+        case 2:
+            std::cout << "Username: ";
+            std::cin >> username;
+            std::cout << "Password: ";
+            std::cin >> password;
+            member3.login(username, password);
+            break;
+
+        case 3:
+            member3.logout();
+            break;
+
+        case 4:
+            std::cout << (member3.isLoggedIn()
+                ? "User is logged in.\n"
+                : "No user is logged in.\n");
+            break;
+
+        case 5:
+            std::cout << "Repository name: ";
+            std::cin >> repoName;
+            std::cout << "Visibility (public/private): ";
+            std::cin >> visibility;
+            member3.createRepository(repoName, visibility);
+            break;
+
+        case 6:
+            member3.viewRepositories();
+            break;
+
+        case 7:
+            std::cout << "Repository ID: ";
+            std::cin >> repoId;
+            std::cout << "Collaborator username: ";
+            std::cin >> username;
+            std::cout << "Role: ";
+            std::cin >> role;
+            member3.addCollaborator(repoId, username, role);
+            break;
+
+        case 8:
+            std::cout << "Repository ID: ";
+            std::cin >> repoId;
+            member3.viewCollaborators(repoId);
+            break;
+
+        case 9:
+            std::cout << "Repository ID: ";
+            std::cin >> repoId;
+            std::cout << "Collaborator username: ";
+            std::cin >> username;
+            std::cout << "New role: ";
+            std::cin >> role;
+            member3.updateCollaboratorRole(repoId, username, role);
+            break;
+
+        case 10:
+            std::cout << "Repository ID: ";
+            std::cin >> repoId;
+            std::cout << "Collaborator username: ";
+            std::cin >> username;
+            member3.removeCollaborator(repoId, username);
+            break;
+
+        case 11:
+            std::cout << "Exiting Member 3 menu.\n";
+            break;
+
+        default:
+            std::cout << "Invalid choice.\n";
+        }
+
+    } while (choice != 11);
+
+    return 0;
+}
+
+// ===== Existing Repository Operations =====
 
    const auto discoveredRoot =
     Repository::discoverRoot(std::filesystem::current_path());
@@ -616,6 +834,8 @@ int main(int argc, char* argv[]) {
     // ===== Member 3: user / login / permission commands =====
 
     // ===== Member 4: clone / push / pull commands =====
+
+    
     std::cerr << "Unknown command: " << command << '\n';
     return 1;
 }
