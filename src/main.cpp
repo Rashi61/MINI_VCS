@@ -184,7 +184,24 @@ int main(int argc, char* argv[]) {
     // ===== Member 3: Authentication and Database Management =====
 
 if (command == "auth") {
-    Member3 member3("minivcs_users.db");
+        const auto discoveredRoot =
+        Repository::discoverRoot(
+            std::filesystem::current_path()
+        );
+
+    if (!discoveredRoot.has_value()) {
+        std::cerr
+            << "Error: current directory is not inside an "
+            << "initialized MiniVCS repository.\n";
+        return 1;
+    }
+
+    const std::filesystem::path databasePath =
+        *discoveredRoot /
+        ".minivcs" /
+        "minivcs_users.db";
+
+    Member3 member3(databasePath.string());
 
     if (!member3.initializeDatabase()) {
         std::cerr << "Database initialization failed.\n";
