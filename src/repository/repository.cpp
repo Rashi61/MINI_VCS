@@ -1,11 +1,42 @@
 
-#include "Repository.h"
+#include "repository.h"
 
 #include <fstream>
+#include<optional>
 #include <system_error>
 
 Repository::Repository(const std::filesystem::path& path)
     : rootPath(std::filesystem::absolute(path).lexically_normal()) {
+}
+std::optional<std::filesystem::path>
+Repository::discoverRoot(const std::filesystem::path& start) {
+    namespace fs = std::filesystem;
+
+    std::error_code ec;
+
+    fs::path current = fs::absolute(start, ec).lexically_normal();
+
+    if (ec) {
+        return std::nullopt;
+    }
+
+    while (true) {
+        Repository candidate(current);
+
+        if (candidate.isInitialized()) {
+            return current;
+        }
+
+        const fs::path parent = current.parent_path();
+
+        if (parent == current || parent.empty()) {
+            break;
+        }
+
+        current = parent;
+    }
+
+    return std::nullopt;
 }
 
 std::filesystem::path Repository::getRootPath() const {
@@ -18,51 +49,41 @@ std::filesystem::path Repository::getMetadataPath() const {
 
 bool Repository::isInitialized() const {
     std::error_code ec;
-
     const auto metadata = getMetadataPath();
-
     if (!std::filesystem::is_directory(rootPath, ec) || ec) {
         return false;
     }
-
     ec.clear();
     if (!std::filesystem::is_directory(metadata, ec) || ec) {
         return false;
     }
-
     ec.clear();
     if (!std::filesystem::is_directory(
             metadata / "objects", ec) || ec) {
         return false;
     }
-
     ec.clear();
     if (!std::filesystem::is_directory(
             metadata / "branches", ec) || ec) {
         return false;
     }
-
     ec.clear();
     if (!std::filesystem::is_regular_file(
             metadata / "config", ec) || ec) {
         return false;
     }
-
     ec.clear();
     if (!std::filesystem::is_regular_file(
             metadata / "HEAD", ec) || ec) {
         return false;
     }
-
     std::ifstream config(metadata / "config");
     std::string line;
-
     while (std::getline(config, line)) {
         if (line == "repository_format=1") {
             return true;
         }
     }
-
     return false;
 }
 
@@ -111,9 +132,7 @@ bool Repository::init() const {
     if (!head) {
         return false;
     }
-        // Create the initial main branch with no commits.
     std::ofstream mainBranch(metadata / "branches" / "main");
-
     if (!mainBranch) {
         return false;
     }
@@ -124,6 +143,5 @@ bool Repository::init() const {
     if (!mainBranch) {
         return false;
     }
-
     return isInitialized();
 }

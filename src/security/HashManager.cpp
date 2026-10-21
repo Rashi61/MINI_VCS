@@ -1,8 +1,8 @@
-
 #include "HashManager.h"
 
 #include <openssl/evp.h>
 
+#include <string>
 #include <array>
 #include <fstream>
 #include <iomanip>
@@ -82,4 +82,52 @@ bool HashManager::hasChanged(
     }
 
     return currentHash != previousHash;
+}
+
+std::string HashManager::calculateHashFromString(
+    const std::string& data
+) {
+    EVP_MD_CTX* context = EVP_MD_CTX_new();
+
+    if (context == nullptr) {
+        return "";
+    }
+
+    std::array<unsigned char, EVP_MAX_MD_SIZE> digest{};
+    unsigned int digestLength = 0;
+
+    if (EVP_DigestInit_ex(context, EVP_sha256(), nullptr) != 1 ||
+        EVP_DigestUpdate(context, data.data(), data.size()) != 1 ||
+        EVP_DigestFinal_ex(
+            context, digest.data(), &digestLength) != 1) {
+        EVP_MD_CTX_free(context);
+        return "";
+    }
+
+    EVP_MD_CTX_free(context);
+
+    std::ostringstream result;
+    result << std::hex << std::setfill('0');
+
+    for (unsigned int i = 0; i < digestLength; ++i) {
+        result << std::setw(2)
+               << static_cast<unsigned int>(digest[i]);
+    }
+
+    return result.str();
+}
+bool HashManager::tryCalculateHash(
+    const std::filesystem::path& filePath,
+    std::string& hashOut
+) {
+    hashOut.clear();
+
+    std::string hash = calculateHash(filePath);
+
+    if (hash.empty()) {
+        return false;
+    }
+
+    hashOut = std::move(hash);
+    return true;
 }

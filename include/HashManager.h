@@ -20,6 +20,10 @@ public:
     const std::filesystem::path& filePath,
     std::string& hashOut
     );
+
+    static std::string calculateHashFromString(
+    const std::string& data
+    );
 };
 
 #endif

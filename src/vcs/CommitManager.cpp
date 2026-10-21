@@ -1,15 +1,484 @@
 #include "CommitManager.h"
 #include "FileManager.h"
 #include "HashManager.h"
-#include <iostream>
+
 #include <algorithm>
+#include <exception>
+#include <cctype>
 #include <system_error>
+#include <filesystem>
 #include <chrono>
 #include <ctime>
 #include <fstream>
 #include <iomanip>
+#include <iostream>
 #include <sstream>
+#include <string>
+#include <unordered_set>
 #include <unordered_map>
+#include <vector>
+
+namespace {
+std::string foldKey(const std::string& value) {
+#if defined(_WIN32) || defined(__APPLE__)
+    std::string out = value;
+    std::transform(out.begin(), out.end(), out.begin(),
+        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return out;
+#else
+    return value;
+#endif
+}
+
+bool validateSnapshotPath(const std::string& storedPath,
+                          std::string& normalized) {
+    namespace fs = std::filesystem;
+
+    std::string text = storedPath;
+    std::replace(text.begin(), text.end(), '\\', '/');
+
+    if (text.empty() || text.front() == '/') {
+        return false;
+    }
+
+#ifdef _WIN32
+    if (text.find_first_of(":<>\"|?*") != std::string::npos) {
+        return false;
+    }
+#endif
+
+    fs::path relativePath(text);
+
+    if (relativePath.is_absolute() || relativePath.has_root_name() ||
+        relativePath.has_root_directory()) {
+        return false;
+    }
+
+    relativePath = relativePath.lexically_normal();
+
+    if (relativePath.empty() || relativePath == ".") {
+        return false;
+    }
+
+    for (const auto& component : relativePath) {
+        const std::string name = component.string();
+        const std::string folded = foldKey(name);
+
+        if (name.empty() || name == "." || name == "..") {
+            return false;
+        }
+
+        if (folded == ".minivcs") {
+            return false;
+        }
+
+#ifdef _WIN32
+        if (name.back() == '.' || name.back() == ' ') {
+            return false;
+        }
+
+        std::string deviceBase = foldKey(name);
+        deviceBase = deviceBase.substr(0, deviceBase.find('.'));
+
+        if (deviceBase == "con" || deviceBase == "prn" ||
+            deviceBase == "aux" || deviceBase == "nul") {
+            return false;
+        }
+
+        if (deviceBase.size() == 4 &&
+            (deviceBase.compare(0, 3, "com") == 0 ||
+             deviceBase.compare(0, 3, "lpt") == 0) &&
+            deviceBase[3] >= '1' && deviceBase[3] <= '9') {
+            return false;
+        }
+#endif
+    }
+
+    normalized = relativePath.generic_string();
+    return !normalized.empty();
+}
+
+
+struct SnapshotManifest {
+    std::vector<std::string> paths;
+    std::unordered_map<std::string, std::string> hashes;
+};
+
+bool isSha256(const std::string& hash) {
+    return hash.size() == 64 &&
+           std::all_of(hash.begin(), hash.end(), [](unsigned char c) {
+               return std::isxdigit(c) != 0;
+           });
+}
+
+bool isMissingError(const std::error_code& error) {
+    return error == std::errc::no_such_file_or_directory ||
+           error == std::errc::not_a_directory;
+}
+
+bool parseSnapshotManifest(const std::filesystem::path& commitFilePath,
+                           const std::string& commitId,
+                           SnapshotManifest& manifest) {
+    namespace fs = std::filesystem;
+
+    std::ifstream commitFile(commitFilePath);
+
+    if (!commitFile) {
+        std::cerr << "Could not open commit metadata.\n";
+        return false;
+    }
+
+    std::string storedId, message, timestamp, parentId;
+    std::size_t fileCount = 0;
+
+    if (!(commitFile >> std::quoted(storedId) >> std::quoted(message)
+                     >> std::quoted(timestamp) >> std::quoted(parentId)
+                     >> fileCount) ||
+        storedId != commitId || fileCount > 100000) {
+        std::cerr << "Invalid commit metadata.\n";
+        return false;
+    }
+
+    std::unordered_set<std::string> foldedPaths;
+
+    for (std::size_t i = 0; i < fileCount; ++i) {
+        std::string storedPath, hash;
+
+        if (!(commitFile >> std::quoted(storedPath) >> std::quoted(hash))) {
+            std::cerr << "Incomplete commit metadata.\n";
+            return false;
+        }
+
+        if (!isSha256(hash)) {
+            std::cerr << "Invalid file hash in commit metadata.\n";
+            return false;
+        }
+
+        std::string normalized;
+
+        if (!validateSnapshotPath(storedPath, normalized)) {
+            std::cerr << "Unsafe path in commit metadata.\n";
+            return false;
+        }
+
+        if (!manifest.hashes.emplace(normalized, hash).second ||
+            !foldedPaths.emplace(foldKey(normalized)).second) {
+            std::cerr << "Duplicate or case-conflicting snapshot path.\n";
+            return false;
+        }
+
+        manifest.paths.push_back(normalized);
+    }
+
+    std::string extra;
+    if (commitFile >> extra) {
+        std::cerr << "Unexpected data in commit metadata.\n";
+        return false;
+    }
+    for (const auto& path : manifest.paths) {
+        fs::path parent = fs::path(path).parent_path();
+
+        while (!parent.empty() && parent != ".") {
+            if (foldedPaths.count(foldKey(parent.generic_string())) != 0) {
+                std::cerr << "Conflicting paths in snapshot.\n";
+                return false;
+            }
+            parent = parent.parent_path();
+        }
+    }
+
+    return true;
+}
+
+bool containsSymlink(const std::filesystem::path& base,
+                     const std::filesystem::path& relative) {
+    namespace fs = std::filesystem;
+    fs::path current = base;
+
+    for (const auto& component : relative) {
+        current /= component;
+        std::error_code linkError;
+        const fs::file_status status = fs::symlink_status(current, linkError);
+
+        if (linkError) {
+            if (isMissingError(linkError)) {
+                continue;
+            }
+            return true;
+        }
+
+        if (fs::is_symlink(status)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool verifySnapshotFiles(const std::filesystem::path& snapshotDir,
+                         const SnapshotManifest& manifest) {
+    namespace fs = std::filesystem;
+
+    for (const auto& path : manifest.paths) {
+        const fs::path relative(path);
+        const fs::path source = snapshotDir / relative;
+
+        if (containsSymlink(snapshotDir, relative)) {
+            std::cerr << "Symlink found in snapshot path: " << path << '\n';
+            return false;
+        }
+
+        std::error_code ec;
+        const fs::file_status status = fs::symlink_status(source, ec);
+
+        if (ec || !fs::is_regular_file(status)) {
+            std::cerr << "Snapshot file is missing or not regular: "
+                      << path << '\n';
+            return false;
+        }
+
+        if (HashManager::calculateHash(source) != manifest.hashes.at(path)) {
+            std::cerr << "Snapshot file is corrupted: " << path << '\n';
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool stageSnapshotFiles(const std::filesystem::path& snapshotDir,
+                        const std::filesystem::path& stagedFiles,
+                        const SnapshotManifest& manifest) {
+    namespace fs = std::filesystem;
+
+    for (const auto& path : manifest.paths) {
+        const fs::path source = snapshotDir / path;
+        const fs::path staged = stagedFiles / path;
+        std::error_code ec;
+
+        fs::create_directories(staged.parent_path(), ec);
+        if (ec) {
+            std::cerr << "Could not prepare staged path: " << path << '\n';
+            return false;
+        }
+
+        fs::copy_file(source, staged,
+                      fs::copy_options::overwrite_existing, ec);
+        if (ec) {
+            std::cerr << "Could not stage file: " << path << '\n';
+            return false;
+        }
+
+        if (HashManager::calculateHash(staged) != manifest.hashes.at(path)) {
+            std::cerr << "Staged file failed verification: " << path << '\n';
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool preflightDestinations(const std::filesystem::path& root,
+                           const SnapshotManifest& manifest) {
+    namespace fs = std::filesystem;
+
+    for (const auto& path : manifest.paths) {
+        const fs::path relative(path);
+        const fs::path destination = root / relative;
+
+        if (containsSymlink(root, relative)) {
+            std::cerr << "Refusing to restore through a symbolic link: "
+                      << path << '\n';
+            return false;
+        }
+
+        fs::path current = root;
+
+        for (const auto& component : relative.parent_path()) {
+            current /= component;
+            std::error_code ec;
+            const fs::file_status status = fs::symlink_status(current, ec);
+
+            if (!ec && fs::exists(status) && !fs::is_directory(status)) {
+                std::cerr << "Parent path is not a directory: "
+                          << current.string() << '\n';
+                return false;
+            }
+
+            if (ec && !isMissingError(ec)) {
+                std::cerr << "Could not inspect parent path: "
+                          << current.string() << '\n';
+                return false;
+            }
+        }
+
+        std::error_code ec;
+        const fs::file_status status = fs::symlink_status(destination, ec);
+
+        if (!ec && fs::exists(status) && !fs::is_regular_file(status)) {
+            std::cerr << "Destination is not a regular file: " << path << '\n';
+            return false;
+        }
+
+        if (ec && !isMissingError(ec)) {
+            std::cerr << "Could not inspect destination: " << path << '\n';
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool backUpDestinations(const std::filesystem::path& root,
+                        const std::filesystem::path& backups,
+                        const SnapshotManifest& manifest,
+                        std::unordered_set<std::string>& backedUp) {
+    namespace fs = std::filesystem;
+
+    for (const auto& path : manifest.paths) {
+        const fs::path destination = root / path;
+        std::error_code ec;
+        const fs::file_status status = fs::symlink_status(destination, ec);
+
+        if (!ec && fs::exists(status)) {
+            const fs::path backup = backups / path;
+
+            fs::create_directories(backup.parent_path(), ec);
+            if (ec) {
+                std::cerr << "Could not prepare backup for: " << path << '\n';
+                return false;
+            }
+
+            fs::copy_file(destination, backup,
+                          fs::copy_options::overwrite_existing, ec);
+            if (ec) {
+                std::cerr << "Could not back up destination: " << path << '\n';
+                return false;
+            }
+
+            backedUp.insert(path);
+        } else if (ec && !isMissingError(ec)) {
+            std::cerr << "Could not inspect destination for backup: "
+                      << path << '\n';
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool applyStagedFiles(const std::filesystem::path& root,
+                      const std::filesystem::path& stagedFiles,
+                      const SnapshotManifest& manifest,
+                      std::vector<std::string>& attempted,
+                      std::vector<std::filesystem::path>& createdDirs) {
+    namespace fs = std::filesystem;
+
+    auto ensureParents = [&](const fs::path& relative) {
+        fs::path current = root;
+
+        for (const auto& component : relative.parent_path()) {
+            current /= component;
+            std::error_code ec;
+            const fs::file_status status = fs::symlink_status(current, ec);
+
+            if (!ec && fs::exists(status)) {
+                if (fs::is_symlink(status) || !fs::is_directory(status)) {
+                    return false;
+                }
+                continue;
+            }
+
+            if (ec && !isMissingError(ec)) {
+                return false;
+            }
+
+            ec.clear();
+            if (!fs::create_directory(current, ec) || ec) {
+                return false;
+            }
+
+            createdDirs.push_back(current);
+        }
+
+        return true;
+    };
+
+    for (const auto& path : manifest.paths) {
+        const fs::path relative(path);
+
+        if (!ensureParents(relative)) {
+            std::cerr << "Could not prepare destination directories for: "
+                      << path << '\n';
+            return false;
+        }
+
+        attempted.push_back(path);
+
+        std::error_code ec;
+        fs::copy_file(stagedFiles / relative, root / relative,
+                      fs::copy_options::overwrite_existing, ec);
+
+        if (ec) {
+            std::cerr << "Could not restore: " << path << '\n';
+            return false;
+        }
+
+        if (HashManager::calculateHash(root / relative) !=
+            manifest.hashes.at(path)) {
+            std::cerr << "Restored file failed verification: " << path << '\n';
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool rollbackRestore(const std::filesystem::path& root,
+                     const std::filesystem::path& backups,
+                     const std::unordered_set<std::string>& backedUp,
+                     const std::vector<std::string>& attempted,
+                     const std::vector<std::filesystem::path>& createdDirs) {
+    namespace fs = std::filesystem;
+    bool ok = true;
+
+    for (auto it = attempted.rbegin(); it != attempted.rend(); ++it) {
+        const fs::path destination = root / *it;
+        std::error_code ec;
+
+        if (backedUp.count(*it) != 0) {
+            fs::copy_file(backups / *it, destination,
+                          fs::copy_options::overwrite_existing, ec);
+
+            if (ec) {
+                ok = false;
+                std::cerr << "ROLLBACK FAILED for: " << *it << '\n';
+            }
+        } else {
+            fs::remove(destination, ec);
+
+            if (ec) {
+                ok = false;
+                std::cerr << "Could not remove partially restored file: "
+                          << *it << '\n';
+            }
+        }
+    }
+
+    for (auto it = createdDirs.rbegin(); it != createdDirs.rend(); ++it) {
+        std::error_code ec;
+        fs::remove(*it, ec);
+        if (ec) {
+            ok = false;
+            std::cerr << "Could not clean up directory: "
+                      << it->string() << '\n';
+        }
+    }
+
+    return ok;
+}
+
+}
 
 CommitManager::CommitManager(const std::filesystem::path& rootPath)
     : repositoryRoot(std::filesystem::absolute(rootPath)),
@@ -21,11 +490,15 @@ std::string CommitManager::getLatestCommitId() const {
     std::string branchName;
 
     if (!headFile || !std::getline(headFile, branchName) ||
-        branchName.empty()) {
+        branchName.empty() ||
+        branchName.find_first_of("/\\") != std::string::npos ||
+        branchName == "." || branchName == "..") {
         return "";
     }
 
-    std::ifstream branchFile(metadataPath / "branches" / branchName);
+    std::ifstream branchFile(
+        metadataPath / "branches" / branchName);
+
     std::string commitId;
 
     if (!branchFile || !std::getline(branchFile, commitId)) {
@@ -35,28 +508,116 @@ std::string CommitManager::getLatestCommitId() const {
     return commitId;
 }
 
+bool CommitManager::updateBranchPointer(
+    const std::string& branchName,
+    const std::string& commitId
+) const {
+    namespace fs = std::filesystem;
+
+    if (branchName.empty() ||
+        branchName == "." ||
+        branchName == ".." ||
+        branchName.find_first_of("/\\") != std::string::npos) {
+        std::cerr << "Invalid branch name.\n";
+        return false;
+    }
+
+    if (commitId.empty()) {
+        std::cerr << "Commit ID cannot be empty.\n";
+        return false;
+    }
+
+    Commit commit;
+
+    if (!getCommit(commitId, commit)) {
+        std::cerr
+            << "Cannot update branch to an invalid commit.\n";
+        return false;
+    }
+
+    const fs::path branchPath =
+        metadataPath / "branches" / branchName;
+
+    std::error_code ec;
+
+    if (!fs::is_regular_file(branchPath, ec) || ec) {
+        std::cerr
+            << "Branch does not exist: "
+            << branchName << '\n';
+        return false;
+    }
+
+    const fs::path temporaryPath =
+        metadataPath / "branches" /
+        (branchName + ".tmp");
+
+    {
+        std::ofstream output(
+            temporaryPath,
+            std::ios::out | std::ios::trunc
+        );
+
+        if (!output) {
+            std::cerr
+                << "Could not create temporary branch pointer.\n";
+            return false;
+        }
+
+        output << commit.getId() << '\n';
+        output.close();
+
+        if (!output) {
+            fs::remove(temporaryPath, ec);
+
+            std::cerr
+                << "Could not write branch pointer.\n";
+            return false;
+        }
+    }
+
+    fs::rename(temporaryPath, branchPath, ec);
+
+    if (ec) {
+        std::error_code cleanupError;
+        fs::remove(temporaryPath, cleanupError);
+
+        std::cerr
+            << "Could not replace branch pointer: "
+            << ec.message() << '\n';
+
+        return false;
+    }
+
+    return true;
+}
 
 bool CommitManager::createCommit(const std::string& message) {
     if (message.empty()) {
+        std::cerr << "Commit message cannot be empty.\n";
         return false;
     }
+
+
     std::ifstream headFile(metadataPath / "HEAD");
     std::string branchName;
 
-    if (!headFile ||
-        !std::getline(headFile, branchName) ||
+    if (!headFile || !std::getline(headFile, branchName) ||
         branchName.empty() ||
         branchName.find_first_of("/\\") != std::string::npos ||
-        branchName == "." ||
-        branchName == "..") {
+        branchName == "." || branchName == "..") {
+        std::cerr << "Could not read HEAD.\n";
         return false;
     }
+
     headFile.close();
 
-    const auto branchPath = metadataPath / "branches" / branchName;
+    const auto branchPath =
+        metadataPath / "branches" / branchName;
+
     std::error_code ec;
 
     if (!std::filesystem::is_regular_file(branchPath, ec) || ec) {
+        std::cerr << "Current branch does not exist.\n";
         return false;
     }
 
@@ -64,13 +625,16 @@ bool CommitManager::createCommit(const std::string& message) {
     std::string parentId;
 
     if (!branchFile || !std::getline(branchFile, parentId)) {
+        std::cerr << "Could not read the current branch.\n";
         return false;
     }
+
     branchFile.close();
 
     if (!parentId.empty() &&
         !std::filesystem::is_regular_file(
             objectsPath / parentId / "commit.txt", ec)) {
+        std::cerr << "Parent commit does not exist.\n";
         return false;
     }
 
@@ -88,13 +652,15 @@ bool CommitManager::createCommit(const std::string& message) {
         const auto filePath = repositoryRoot / relativePath;
 
         ec.clear();
+
         if (!std::filesystem::is_regular_file(filePath, ec) || ec) {
             std::cerr << "Cannot commit missing file: "
                       << relativePath << '\n';
             return false;
         }
 
-        const std::string hash = HashManager::calculateHash(filePath);
+        const std::string hash =
+            HashManager::calculateHash(filePath);
 
         if (hash.empty()) {
             std::cerr << "Could not hash file: "
@@ -108,7 +674,8 @@ bool CommitManager::createCommit(const std::string& message) {
     if (!parentId.empty()) {
         const auto history = getCommitHistory();
 
-        if (history.empty() || history.back().getId() != parentId) {
+        if (history.empty() ||
+            history.back().getId() != parentId) {
             std::cerr << "Could not read the parent commit.\n";
             return false;
         }
@@ -125,9 +692,10 @@ bool CommitManager::createCommit(const std::string& message) {
         std::chrono::duration_cast<std::chrono::milliseconds>(
             now.time_since_epoch()).count();
 
-    const std::string commitId = std::to_string(milliseconds);
+    const std::string timestampForId =
+        std::to_string(milliseconds);
 
-    std::time_t currentTime =
+    const std::time_t currentTime =
         std::chrono::system_clock::to_time_t(now);
 
     std::tm timeInfo{};
@@ -139,7 +707,37 @@ bool CommitManager::createCommit(const std::string& message) {
 #endif
 
     std::ostringstream timestampStream;
-    timestampStream << std::put_time(&timeInfo, "%Y-%m-%d %H:%M:%S");
+    timestampStream << std::put_time(
+        &timeInfo, "%Y-%m-%d %H:%M:%S");
+
+    const std::string timestamp = timestampStream.str();
+
+    std::vector<std::string> sortedPaths;
+    sortedPaths.reserve(hashes.size());
+
+    for (const auto& entry : hashes) {
+        sortedPaths.push_back(entry.first);
+    }
+
+    std::sort(sortedPaths.begin(), sortedPaths.end());
+
+    std::ostringstream idInput;
+
+    idInput << parentId << '\n'
+            << message << '\n'
+            << timestampForId << '\n';
+
+    for (const auto& path : sortedPaths) {
+        idInput << path << ':' << hashes.at(path) << '\n';
+    }
+
+    const std::string commitId =
+        HashManager::calculateHashFromString(idInput.str());
+
+    if (commitId.empty()) {
+        std::cerr << "Could not calculate commit ID.\n";
+        return false;
+    }
 
     const auto finalDir = objectsPath / commitId;
     const auto tempDir = objectsPath / (commitId + ".tmp");
@@ -147,14 +745,16 @@ bool CommitManager::createCommit(const std::string& message) {
     std::filesystem::create_directories(objectsPath, ec);
 
     if (ec || std::filesystem::exists(finalDir, ec) || ec) {
+        std::cerr << "Could not prepare commit directory.\n";
         return false;
     }
 
     std::filesystem::remove_all(tempDir, ec);
     ec.clear();
 
-    if (!std::filesystem::create_directories(tempDir / "files", ec) ||
-        ec) {
+    if (!std::filesystem::create_directories(
+            tempDir / "files", ec) || ec) {
+        std::filesystem::remove_all(tempDir);
         return false;
     }
 
@@ -171,8 +771,10 @@ bool CommitManager::createCommit(const std::string& message) {
         }
 
         std::filesystem::copy_file(
-            source, destination,
-            std::filesystem::copy_options::overwrite_existing, ec);
+            source,
+            destination,
+            std::filesystem::copy_options::overwrite_existing,
+            ec);
 
         if (ec) {
             std::filesystem::remove_all(tempDir);
@@ -189,19 +791,9 @@ bool CommitManager::createCommit(const std::string& message) {
 
     commitFile << std::quoted(commitId) << '\n'
                << std::quoted(message) << '\n'
-               << std::quoted(timestampStream.str()) << '\n'
+               << std::quoted(timestamp) << '\n'
                << std::quoted(parentId) << '\n'
                << hashes.size() << '\n';
-
-    // Sort paths for deterministic commit metadata.
-    std::vector<std::string> sortedPaths;
-    sortedPaths.reserve(hashes.size());
-
-    for (const auto& entry : hashes) {
-        sortedPaths.push_back(entry.first);
-    }
-
-    std::sort(sortedPaths.begin(), sortedPaths.end());
 
     for (const auto& path : sortedPaths) {
         commitFile << std::quoted(path) << '\n'
@@ -222,7 +814,6 @@ bool CommitManager::createCommit(const std::string& message) {
         return false;
     }
 
-    // Replace the branch pointer using a temporary file.
     const auto branchTempPath =
         metadataPath / "branches" / (branchName + ".tmp");
 
@@ -250,63 +841,518 @@ bool CommitManager::createCommit(const std::string& message) {
         std::error_code cleanupError;
         std::filesystem::remove(branchTempPath, cleanupError);
         std::filesystem::remove_all(finalDir, cleanupError);
+
+        std::cerr
+            << "Could not update branch pointer. "
+            << "The previous branch pointer is unchanged.\n";
         return false;
     }
 
     return true;
 }
 
-std::vector<Commit> CommitManager::getCommitHistory() const {
-    std::vector<Commit> history;
-    std::string commitId = getLatestCommitId();
+bool CommitManager::readCommitFile(const std::string& commitId,
+                                   Commit& out) const {
+    std::ifstream commitFile(objectsPath / commitId / "commit.txt");
 
-    while (!commitId.empty()) {
-        std::ifstream commitFile(
-            objectsPath / commitId / "commit.txt");
+    if (!commitFile) {
+        return false;
+    }
 
-        if (!commitFile) {
-            break;
+    std::string storedId, message, timestamp, parentId;
+    std::size_t fileCount = 0;
+
+    if (!(commitFile >> std::quoted(storedId) >> std::quoted(message)
+                     >> std::quoted(timestamp) >> std::quoted(parentId)
+                     >> fileCount) ||
+        storedId != commitId) {
+        return false;
+    }
+
+    std::unordered_map<std::string, std::string> hashes;
+
+    for (std::size_t i = 0; i < fileCount; ++i) {
+        std::string path, hash;
+
+        if (!(commitFile >> std::quoted(path) >> std::quoted(hash))) {
+            return false;
         }
 
-        std::string storedId;
-        std::string message;
-        std::string timestamp;
-        std::string parentId;
-        std::size_t fileCount = 0;
-
-        if (!(commitFile >> std::quoted(storedId)
-                        >> std::quoted(message)
-                        >> std::quoted(timestamp)
-                        >> std::quoted(parentId)
-                        >> fileCount)) {
-            break;
-        }
-
-        std::unordered_map<std::string, std::string> hashes;
-
-        for (std::size_t i = 0; i < fileCount; ++i) {
-            std::string path;
-            std::string hash;
-
-            if (!(commitFile >> std::quoted(path)
-                            >> std::quoted(hash))) {
-                hashes.clear();
-                break;
-            }
-
-            hashes[path] = hash;
-        }
+        hashes[path] = hash;
+    }
 
         if (hashes.size() != fileCount) {
-            break;
+        return false;
+    }
+
+    std::string unexpectedData;
+
+    if (commitFile >> unexpectedData) {
+        return false;
+    }
+
+    out = Commit(
+        storedId,
+        message,
+        timestamp,
+        parentId,
+        hashes
+    );
+
+    return true;
+}
+
+HistoryResult CommitManager::readCommitHistory() const {
+    HistoryResult result;
+
+    std::ifstream headFile(metadataPath / "HEAD");
+    std::string branchName;
+
+    if (!headFile || !std::getline(headFile, branchName)) {
+        result.valid = false;
+        result.error = "HEAD file is missing or unreadable.";
+        return result;
+    }
+
+    if (!branchName.empty() && branchName.back() == '\r') {
+        branchName.pop_back();
+    }
+
+    if (branchName.empty() ||
+        branchName == "." ||
+        branchName == ".." ||
+        branchName.find_first_of("/\\") != std::string::npos) {
+        result.valid = false;
+        result.error = "HEAD contains an invalid branch name.";
+        return result;
+    }
+
+    std::ifstream branchFile(
+        metadataPath / "branches" / branchName
+    );
+
+    if (!branchFile) {
+        result.valid = false;
+        result.error =
+            "current branch file is missing: " + branchName;
+        return result;
+    }
+
+    std::string commitId;
+
+    if (!std::getline(branchFile, commitId)) {
+        result.valid = false;
+        result.error =
+            "current branch file is unreadable: " + branchName;
+        return result;
+    }
+
+    if (!commitId.empty() && commitId.back() == '\r') {
+        commitId.pop_back();
+    }
+
+    // A blank branch file is valid for a newly initialized repository.
+    if (commitId.empty()) {
+        std::string extraLine;
+
+        while (std::getline(branchFile, extraLine)) {
+            if (!extraLine.empty() && extraLine != "\r") {
+                result.valid = false;
+                result.error =
+                    "empty branch contains unexpected data.";
+                return result;
+            }
         }
 
-        history.emplace_back(
-            storedId, message, timestamp, parentId, hashes);
+        return result;
+    }
 
+    // Check that the branch file contains only one commit ID line.
+    std::string extraLine;
+
+    while (std::getline(branchFile, extraLine)) {
+        if (!extraLine.empty() && extraLine != "\r") {
+            result.valid = false;
+            result.error =
+                "branch file contains unexpected extra data.";
+            result.commits.clear();
+            return result;
+        }
+    }
+
+    std::unordered_set<std::string> visited;
+
+    while (!commitId.empty()) {
+        if (!visited.insert(commitId).second) {
+            result.valid = false;
+            result.error =
+                "commit history contains a parent cycle at " + commitId;
+            result.commits.clear();
+            return result;
+        }
+
+        std::error_code ec;
+        const auto commitPath =
+            objectsPath / commitId / "commit.txt";
+
+        if (!std::filesystem::is_regular_file(commitPath, ec) || ec) {
+            result.valid = false;
+            result.error =
+                "missing commit metadata for " + commitId;
+            result.commits.clear();
+            return result;
+        }
+
+        Commit commit;
+
+        if (!readCommitFile(commitId, commit)) {
+            result.valid = false;
+            result.error =
+                "invalid commit metadata for " + commitId;
+            result.commits.clear();
+            return result;
+        }
+
+        const std::string parentId = commit.getParentId();
+
+        if (!parentId.empty()) {
+            const auto parentPath =
+                objectsPath / parentId / "commit.txt";
+
+            if (!std::filesystem::is_regular_file(parentPath, ec) ||
+                ec) {
+                result.valid = false;
+                result.error =
+                    "missing parent commit " + parentId +
+                    " referenced by " + commitId;
+                result.commits.clear();
+                return result;
+            }
+        }
+
+        result.commits.push_back(std::move(commit));
         commitId = parentId;
     }
 
-    std::reverse(history.begin(), history.end());
-    return history;
+    std::reverse(
+        result.commits.begin(),
+        result.commits.end()
+    );
+
+    return result;
+}
+
+std::vector<Commit> CommitManager::getCommitHistory() const {
+    const HistoryResult result = readCommitHistory();
+
+    if (!result.valid) {
+        return {};
+    }
+
+    return result.commits;
+}
+
+bool CommitManager::getCommit(const std::string& requestedId,
+                              Commit& out) const {
+    if (requestedId.empty() ||
+        !std::all_of(requestedId.begin(), requestedId.end(),
+            [](unsigned char c) {
+                return std::isalnum(c) || c == '-' || c == '_';
+            })) {
+        std::cerr << "Invalid commit ID.\n";
+        return false;
+    }
+
+    const std::string commitId = resolveCommitId(requestedId);
+
+    if (commitId.empty()) {
+        return false;
+    }
+
+    if (!readCommitFile(commitId, out)) {
+        std::cerr << "Invalid commit metadata.\n";
+        return false;
+    }
+
+    return true;
+}
+
+std::filesystem::path CommitManager::getSnapshotPath(
+    const std::string& commitId) const {
+    return objectsPath / commitId / "files";
+}
+
+bool CommitManager::isSnapshotPruned(const std::string& commitId) const {
+    std::error_code ec;
+    return std::filesystem::exists(objectsPath / commitId / "pruned", ec);
+}
+
+std::vector<std::string> CommitManager::getBranchTips() const {
+    namespace fs = std::filesystem;
+    std::vector<std::string> tips;
+    std::error_code ec;
+
+    for (fs::directory_iterator it(metadataPath / "branches", ec), end;
+         !ec && it != end; it.increment(ec)) {
+        std::error_code entryError;
+
+        if (!it->is_regular_file(entryError) || entryError ||
+            it->path().extension() == ".tmp") {
+            continue;
+        }
+
+        std::ifstream input(it->path());
+        std::string id;
+
+        if (std::getline(input, id) && !id.empty()) {
+            tips.push_back(id);
+        }
+    }
+
+    return tips;
+}
+
+std::string CommitManager::resolveCommitId(
+    const std::string& prefix) const {
+    namespace fs = std::filesystem;
+
+    if (prefix.size() < 4) {
+        std::cerr << "Commit ID is too short. Use at least 4 characters.\n";
+        return "";
+    }
+
+    std::error_code ec;
+
+    if (fs::is_regular_file(objectsPath / prefix / "commit.txt", ec)) {
+        return prefix;
+    }
+
+    std::vector<std::string> matches;
+
+    for (fs::directory_iterator it(objectsPath, ec), end;
+         !ec && it != end; it.increment(ec)) {
+        std::error_code entryError;
+        if (!it->is_directory(entryError) || entryError) {
+            continue;
+        }
+
+        const std::string name = it->path().filename().string();
+
+        if (name.size() >= prefix.size() &&
+            name.compare(0, prefix.size(), prefix) == 0 &&
+            fs::is_regular_file(it->path() / "commit.txt", entryError)) {
+            matches.push_back(name);
+        }
+    }
+
+    if (matches.empty()) {
+        std::cerr << "Commit does not exist.\n";
+        return "";
+    }
+
+    if (matches.size() > 1) {
+        std::cerr << "Commit ID prefix is ambiguous. Matches:\n";
+        for (const auto& m : matches) {
+            std::cerr << "  " << m << '\n';
+        }
+        return "";
+    }
+
+    return matches.front();
+}
+
+std::vector<std::string> CommitManager::findOverwriteConflicts(
+    const std::vector<std::string>& paths,
+    const std::unordered_map<std::string, std::string>& hashes) const {
+    namespace fs = std::filesystem;
+
+    std::unordered_map<std::string, std::unordered_set<std::string>> known;
+
+    for (const auto& commit : getCommitHistory()) {
+        for (const auto& entry : commit.getFileHashes()) {
+            known[entry.first].insert(entry.second);
+        }
+    }
+
+    std::vector<std::string> conflicts;
+
+    for (const auto& path : paths) {
+        std::error_code ec;
+        const fs::path destination = repositoryRoot / path;
+
+        if (!fs::is_regular_file(destination, ec) || ec) {
+            continue;
+        }
+
+        const std::string current = HashManager::calculateHash(destination);
+
+        if (current == hashes.at(path)) {
+            continue;
+        }
+
+        const auto entry = known.find(path);
+
+        if (entry == known.end() || entry->second.count(current) == 0) {
+            conflicts.push_back(path);
+        }
+    }
+
+    return conflicts;
+}
+
+bool CommitManager::restoreCommit(const std::string& requestedId,
+                                  bool force) {
+    namespace fs = std::filesystem;
+
+    if (requestedId.empty() ||
+        !std::all_of(requestedId.begin(), requestedId.end(),
+            [](unsigned char c) {
+                return std::isalnum(c) || c == '-' || c == '_';
+            })) {
+        std::cerr << "Invalid commit ID.\n";
+        return false;
+    }
+
+    const std::string commitId = resolveCommitId(requestedId);
+
+    if (commitId.empty()) {
+        return false;
+    }
+
+    const fs::path commitDir = objectsPath / commitId;
+    const fs::path snapshotDir = commitDir / "files";
+    const fs::path stagingDir = metadataPath / "restore-staging";
+    std::error_code ec;
+
+    SnapshotManifest manifest;
+
+    if (!parseSnapshotManifest(commitDir / "commit.txt", commitId,
+                               manifest)) {
+        return false;
+    }
+
+    if (!fs::is_directory(metadataPath, ec) || ec) {
+        std::cerr << "Repository metadata directory is missing.\n";
+        return false;
+    }
+
+    if (isSnapshotPruned(commitId)) {
+        std::cerr << "The snapshot of this commit was removed by the "
+                     "retention policy. History is kept, files are not.\n";
+        return false;
+    }
+
+    ec.clear();
+    if (!fs::is_directory(snapshotDir, ec) || ec) {
+        std::cerr << "Commit snapshot is missing.\n";
+        return false;
+    }
+
+    if (!verifySnapshotFiles(snapshotDir, manifest)) {
+        return false;
+    }
+
+    if (!force) {
+        const auto conflicts =
+            findOverwriteConflicts(manifest.paths, manifest.hashes);
+
+        if (!conflicts.empty()) {
+            std::cerr << "Restore refused: these files have uncommitted "
+                         "changes that would be overwritten:\n";
+            for (const auto& path : conflicts) {
+                std::cerr << "  " << path << '\n';
+            }
+            std::cerr << "Commit them first, or run again with --force.\n";
+            return false;
+        }
+    }
+
+    ec.clear();
+    const fs::file_status stagingStatus = fs::symlink_status(stagingDir, ec);
+
+    if (!ec && fs::exists(stagingStatus)) {
+        std::cerr << "Restore staging directory already exists. "
+                  << "Inspect and preserve it before retrying: "
+                  << stagingDir.string() << '\n';
+        return false;
+    }
+
+    if (ec && !isMissingError(ec)) {
+        std::cerr << "Could not inspect restore staging directory.\n";
+        return false;
+    }
+
+    const fs::path stagedFiles = stagingDir / "files";
+    const fs::path backups = stagingDir / "backups";
+
+    ec.clear();
+    if (!fs::create_directory(stagingDir, ec) || ec) {
+        std::cerr << "Could not create restore staging directory.\n";
+        return false;
+    }
+
+    auto cleanupStaging = [&]() {
+        std::error_code cleanupError;
+        fs::remove_all(stagingDir, cleanupError);
+        return !cleanupError;
+    };
+
+    ec.clear();
+    fs::create_directories(stagedFiles, ec);
+    if (!ec) {
+        fs::create_directories(backups, ec);
+    }
+    if (ec) {
+        cleanupStaging();
+        std::cerr << "Could not prepare staging folders.\n";
+        return false;
+    }
+
+    std::unordered_set<std::string> backedUp;
+
+    if (!stageSnapshotFiles(snapshotDir, stagedFiles, manifest) ||
+        !preflightDestinations(repositoryRoot, manifest) ||
+        !backUpDestinations(repositoryRoot, backups, manifest, backedUp)) {
+        cleanupStaging();
+        return false;
+    }
+
+    std::vector<std::string> attempted;
+    std::vector<fs::path> createdDirs;
+
+    if (!applyStagedFiles(repositoryRoot, stagedFiles, manifest,
+                          attempted, createdDirs)) {
+        if (rollbackRestore(repositoryRoot, backups, backedUp,
+                            attempted, createdDirs)) {
+            if (!cleanupStaging()) {
+                std::cerr << "Rollback succeeded, but staging cleanup "
+                             "failed: " << stagingDir.string() << '\n';
+            }
+            std::cerr << "Restore failed; attempted working-tree changes "
+                         "were rolled back.\n";
+        } else {
+            std::cerr << "Restore failed and rollback was incomplete. "
+                         "Preserve the backups at: "
+                      << stagingDir.string() << '\n';
+        }
+
+        return false;
+    }
+
+    if (!cleanupStaging()) {
+        std::cerr << "Restore succeeded, but staging cleanup failed. "
+                  << "Inspect: " << stagingDir.string() << '\n';
+    }
+
+    std::cout << "Restored commit: " << commitId << '\n';
+    std::cout << "Branch pointer and commit history were not changed.\n";
+    std::cout << "Files absent from the selected snapshot were preserved.\n";
+
+    return true;
+}
+bool CommitManager::checkoutCommit(
+    const std::string& requestedId,
+    bool force
+) {
+    return restoreCommit(requestedId, force);
 }
