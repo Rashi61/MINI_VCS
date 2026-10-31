@@ -16,6 +16,7 @@ add_executable(minivcs
     src/security/HashManager.cpp
     src/vcs/commit.cpp
     src/vcs/CommitManager.cpp
+    src/vcs/IntegrityManager.cpp
     src/RetentionManager.cpp
     src/vcs/DiffManager.cpp
     src/vcs/branch.cpp
@@ -74,6 +75,13 @@ if(Python3_Interpreter_FOUND)
         NAME minivcs_member1_regressions
         COMMAND ${Python3_EXECUTABLE}
                 ${CMAKE_SOURCE_DIR}/tests/member1_regressions.py
+                $<TARGET_FILE:minivcs>
+    )
+
+    add_test(
+        NAME minivcs_member1_integrity
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_SOURCE_DIR}/tests/member1_integrity.py
                 $<TARGET_FILE:minivcs>
     )
 endif()
