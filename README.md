@@ -28,6 +28,7 @@ The Phase-II integration branch combines the core backend, branch-management fun
 - Retention configuration and cleanup of expired snapshots.
 - Branch creation, listing, switching, and deletion.
 - Branch pointer updates and checkout restoration.
+- Repository integrity verification for branch pointers, commit metadata, parent links, snapshots, and stored file hashes.
 - SQLite database initialization.
 - User registration and login.
 - Password hashing and verification using the Windows CNG/BCrypt API.
@@ -99,6 +100,7 @@ MiniVCS/
 │   ├── DiffManager.h
 │   ├── FileManager.h
 │   ├── HashManager.h
+│   ├── IntegrityManager.h
 │   ├── RetentionManager.h
 │   ├── member3.h
 │   └── repository.h
@@ -114,12 +116,14 @@ MiniVCS/
 │       ├── CommitManager.cpp
 │       ├── DiffManager.cpp
 │       ├── FileManager.cpp
+│       ├── IntegrityManager.cpp
 │       ├── IgnoreMatcher.cpp
 │       ├── branch.cpp
 │       └── commit.cpp
 ├── tests/
 │   ├── run_tests.py
 │   ├── member1_regressions.py
+│   ├── member1_integrity.py
 │   └── member3_demo.cpp
 ├── third_party/
 │   └── sqlite3/
@@ -214,12 +218,19 @@ Run the Member 1 regression tests directly:
 python tests\member1_regressions.py .\build\Debug\minivcs.exe
 ```
 
+Run the Member 1 integrity tests directly
+
+```powershell
+python tests\member1_integrity.py .\build\Debug\minivcs.exe
+```
+
 The Phase-II Windows validation performed so far reported:
 
 ```text
-CTest: 2/2 tests passed
+CTest: 4/4 tests passed
 Main CLI suite: 99 passed, 0 failed, 5 skipped
 Member 1 regression suite: all tests passed
+Member 1 integrity suite: all tests passed
 ```
 
 The skipped cases represent branch, merge, and SQLite/authentication coverage that was not yet fully converted into automated tests. Manual branch and authentication checks were performed separately.
