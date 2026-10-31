@@ -306,6 +306,12 @@ minivcs diff <commit-id-or-prefix>
 minivcs diff <older-commit> <newer-commit>
 ```
 
+### Verify repository integrity
+
+```powershell
+minivcs verify
+```
+
 ### Manage retention
 
 ```powershell
@@ -386,6 +392,7 @@ SQLite stores structured metadata such as users, repository records, and collabo
 - File tracking and ignore handling.
 - Commit and snapshot management.
 - Status, history, restoration, and retention functionality.
+- Repository integrity verification and corruption diagnostics.
 - Corrupt-history reporting.
 - Branch pointer and checkout APIs.
 - CMake/build integration.

@@ -15,6 +15,7 @@
 #include "HashManager.h"
 #include "CommitManager.h"
 #include "DiffManager.h"
+#include "IntegrityManager.h"
 #include "branchmanager.h"
 #include "RetentionManager.h"
 #include "member3.h"
@@ -126,6 +127,7 @@ int main(int argc, char* argv[]) {
         std::cout << "  minivcs restore <commit-id|prefix> [--force]\n";
         std::cout << "  minivcs show <commit-id|prefix>\n";
         std::cout << "  minivcs diff [<commit>] [<commit>]\n";
+        std::cout << "  minivcs verify\n";
         std::cout << "  minivcs retention [status|set <days>|cleanup "
                      "[--dry-run]|log]\n";
         std::cout<< "  minivcs branch create <name>\n";
@@ -470,6 +472,58 @@ if (command == "auth") {
         return diffManager.diffWorkingTree(argc == 3 ? argv[2] : "",
                                            std::cout)
                    ? 0 : 1;
+    }
+
+    if (command == "verify") {
+        if (argc != 2) {
+            std::cerr << "Usage: minivcs verify\n";
+            return 1;
+        }
+
+        IntegrityManager integrityManager(repository.getRootPath());
+        const IntegrityReport report =
+            integrityManager.verifyRepository();
+
+        std::cout << "Repository integrity check\n\n";
+        std::cout << "Checked branches: "
+                  << report.checkedBranches << '\n';
+        std::cout << "Checked commits: "
+                  << report.checkedCommits << '\n';
+        std::cout << "Checked snapshots: "
+                  << report.checkedSnapshots << '\n';
+
+        int warnings = 0;
+        int errors = 0;
+
+        for (const auto& issue : report.issues) {
+            if (issue.warning) {
+                ++warnings;
+                std::cout << "Warning: ";
+            } else {
+                ++errors;
+                std::cout << "Error: ";
+            }
+
+            std::cout << '[' << issue.category << "] "
+                      << issue.message;
+
+            if (!issue.path.empty()) {
+                std::cout << " (" << issue.path << ')';
+            }
+
+            std::cout << '\n';
+        }
+
+        std::cout << "\nErrors: " << errors << '\n';
+        std::cout << "Warnings: " << warnings << '\n';
+
+        if (!report.valid) {
+            std::cout << "Repository is corrupt.\n";
+            return 1;
+        }
+
+        std::cout << "Repository is valid.\n";
+        return 0;
     }
 
     if (command == "retention") {
