@@ -1,4 +1,4 @@
-#include "remote/RemoteManager.h"
+#include "RemoteManager.h"
 #include <filesystem>
 #include <fstream>
 #include <iostream>
