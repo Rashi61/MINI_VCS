@@ -26,7 +26,8 @@ public:
 void logout();
 
 bool isLoggedIn() const;
-
+int getCurrentUserId() const;
+std::string getCurrentUsername() const;
 bool createRepository(const std::string& repoName,
                       const std::string& visibility);
 void viewRepositories();
