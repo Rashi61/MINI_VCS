@@ -225,7 +225,8 @@ if (command == "auth") {
         std::cout << "9. Update Collaborator Role\n";
         std::cout << "10. Remove Collaborator\n";
         std::cout << "11. Exit\n";
-        std::cout << "Enter your choice: ";
+        std::cout << "Enter your choice: "
+                  << std::flush;
 
         if (!(std::cin >> choice)) {
             std::cerr << "Invalid input.\n";
@@ -260,9 +261,14 @@ if (command == "auth") {
             break;
 
         case 4:
-            std::cout << (member3.isLoggedIn()
-                ? "User is logged in.\n"
-                : "No user is logged in.\n");
+            if (member3.isLoggedIn()) {
+                std::cout << "User is logged in.\n";
+            } else {
+                std::cout << "No user is logged in.\n";
+            }
+
+            std::cout << "Returning to authentication menu...\n"
+                      << std::flush;
             break;
 
         case 5:
