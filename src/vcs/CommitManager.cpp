@@ -128,13 +128,24 @@ bool parseSnapshotManifest(const std::filesystem::path& commitFilePath,
         return false;
     }
 
-    std::string storedId, message, timestamp, parentId;
+    std::string storedId;
+    std::string message;
+    std::string timestamp;
+    std::string authorId;
+    std::string firstParentId;
+    std::string secondParentId;
     std::size_t fileCount = 0;
 
-    if (!(commitFile >> std::quoted(storedId) >> std::quoted(message)
-                     >> std::quoted(timestamp) >> std::quoted(parentId)
-                     >> fileCount) ||
-        storedId != commitId || fileCount > 100000) {
+    if (!(commitFile
+            >> std::quoted(storedId)
+            >> std::quoted(message)
+            >> std::quoted(timestamp)
+            >> std::quoted(authorId)
+            >> std::quoted(firstParentId)
+            >> std::quoted(secondParentId)
+            >> fileCount) ||
+        storedId != commitId ||
+        fileCount > 100000) {
         std::cerr << "Invalid commit metadata.\n";
         return false;
     }
@@ -590,8 +601,9 @@ bool CommitManager::updateBranchPointer(
 
     return true;
 }
-
-bool CommitManager::createCommit(const std::string& message) {
+bool CommitManager::createCommit(
+    const std::string& message
+) {
     if (message.empty()) {
         std::cerr << "Commit message cannot be empty.\n";
         return false;
@@ -686,167 +698,42 @@ bool CommitManager::createCommit(const std::string& message) {
         }
     }
 
-    const auto now = std::chrono::system_clock::now();
+    const std::string authorId = "unknown";
+    const std::string secondParentId;
 
-    const auto milliseconds =
-        std::chrono::duration_cast<std::chrono::milliseconds>(
-            now.time_since_epoch()).count();
+    std::string createdCommitId;
 
-    const std::string timestampForId =
-        std::to_string(milliseconds);
+    const bool created =
+        createCommitObject(
+            message,
+            authorId,
+            parentId,
+            secondParentId,
+            hashes,
+            createdCommitId
+        );
 
-    const std::time_t currentTime =
-        std::chrono::system_clock::to_time_t(now);
-
-    std::tm timeInfo{};
-
-#ifdef _WIN32
-    localtime_s(&timeInfo, &currentTime);
-#else
-    localtime_r(&currentTime, &timeInfo);
-#endif
-
-    std::ostringstream timestampStream;
-    timestampStream << std::put_time(
-        &timeInfo, "%Y-%m-%d %H:%M:%S");
-
-    const std::string timestamp = timestampStream.str();
-
-    std::vector<std::string> sortedPaths;
-    sortedPaths.reserve(hashes.size());
-
-    for (const auto& entry : hashes) {
-        sortedPaths.push_back(entry.first);
-    }
-
-    std::sort(sortedPaths.begin(), sortedPaths.end());
-
-    std::ostringstream idInput;
-
-    idInput << parentId << '\n'
-            << message << '\n'
-            << timestampForId << '\n';
-
-    for (const auto& path : sortedPaths) {
-        idInput << path << ':' << hashes.at(path) << '\n';
-    }
-
-    const std::string commitId =
-        HashManager::calculateHashFromString(idInput.str());
-
-    if (commitId.empty()) {
-        std::cerr << "Could not calculate commit ID.\n";
-        return false;
-    }
-
-    const auto finalDir = objectsPath / commitId;
-    const auto tempDir = objectsPath / (commitId + ".tmp");
-
-    std::filesystem::create_directories(objectsPath, ec);
-
-    if (ec || std::filesystem::exists(finalDir, ec) || ec) {
-        std::cerr << "Could not prepare commit directory.\n";
-        return false;
-    }
-
-    std::filesystem::remove_all(tempDir, ec);
-    ec.clear();
-
-    if (!std::filesystem::create_directories(
-            tempDir / "files", ec) || ec) {
-        std::filesystem::remove_all(tempDir);
-        return false;
-    }
-
-    for (const auto& relativePath : files) {
-        const auto source = repositoryRoot / relativePath;
-        const auto destination = tempDir / "files" / relativePath;
-
-        std::filesystem::create_directories(
-            destination.parent_path(), ec);
-
-        if (ec) {
-            std::filesystem::remove_all(tempDir);
-            return false;
-        }
-
-        std::filesystem::copy_file(
-            source,
-            destination,
-            std::filesystem::copy_options::overwrite_existing,
-            ec);
-
-        if (ec) {
-            std::filesystem::remove_all(tempDir);
-            return false;
-        }
-    }
-
-    std::ofstream commitFile(tempDir / "commit.txt");
-
-    if (!commitFile) {
-        std::filesystem::remove_all(tempDir);
-        return false;
-    }
-
-    commitFile << std::quoted(commitId) << '\n'
-               << std::quoted(message) << '\n'
-               << std::quoted(timestamp) << '\n'
-               << std::quoted(parentId) << '\n'
-               << hashes.size() << '\n';
-
-    for (const auto& path : sortedPaths) {
-        commitFile << std::quoted(path) << '\n'
-                   << std::quoted(hashes.at(path)) << '\n';
-    }
-
-    commitFile.close();
-
-    if (!commitFile) {
-        std::filesystem::remove_all(tempDir);
-        return false;
-    }
-
-    std::filesystem::rename(tempDir, finalDir, ec);
-
-    if (ec) {
-        std::filesystem::remove_all(tempDir);
-        return false;
-    }
-
-    const auto branchTempPath =
-        metadataPath / "branches" / (branchName + ".tmp");
-
-    {
-        std::ofstream branchTemp(branchTempPath);
-
-        if (!branchTemp) {
-            std::filesystem::remove_all(finalDir);
-            return false;
-        }
-
-        branchTemp << commitId << '\n';
-        branchTemp.close();
-
-        if (!branchTemp) {
-            std::filesystem::remove(branchTempPath, ec);
-            std::filesystem::remove_all(finalDir);
-            return false;
-        }
-    }
-
-    std::filesystem::rename(branchTempPath, branchPath, ec);
-
-    if (ec) {
-        std::error_code cleanupError;
-        std::filesystem::remove(branchTempPath, cleanupError);
-        std::filesystem::remove_all(finalDir, cleanupError);
-
+    if (!created) {
         std::cerr
-            << "Could not update branch pointer. "
-            << "The previous branch pointer is unchanged.\n";
+            << "Commit object could not be created.\n";
         return false;
     }
+
+    if (!updateBranchPointer(
+            branchName,
+            createdCommitId
+        )) {
+        std::cerr
+            << "Commit was created, but the branch pointer "
+            << "could not be updated.\n";
+        return false;
+    }
+
+    std::cout
+        << "Commit created successfully!\n"
+        << "Commit ID: "
+        << createdCommitId
+        << '\n';
 
     return true;
 }
@@ -859,15 +746,26 @@ bool CommitManager::readCommitFile(const std::string& commitId,
         return false;
     }
 
-    std::string storedId, message, timestamp, parentId;
+    std::string storedId;
+    std::string message;
+    std::string timestamp;
+    std::string authorId;
+    std::string firstParentId;
+    std::string secondParentId;
     std::size_t fileCount = 0;
 
-    if (!(commitFile >> std::quoted(storedId) >> std::quoted(message)
-                     >> std::quoted(timestamp) >> std::quoted(parentId)
-                     >> fileCount) ||
+    if (!(commitFile
+            >> std::quoted(storedId)
+            >> std::quoted(message)
+            >> std::quoted(timestamp)
+            >> std::quoted(authorId)
+            >> std::quoted(firstParentId)
+            >> std::quoted(secondParentId)
+            >> fileCount) ||
         storedId != commitId) {
         return false;
     }
+
 
     std::unordered_map<std::string, std::string> hashes;
 
@@ -895,9 +793,12 @@ bool CommitManager::readCommitFile(const std::string& commitId,
         storedId,
         message,
         timestamp,
-        parentId,
+        authorId,
+        firstParentId,
+        secondParentId,
         hashes
     );
+
 
     return true;
 }
@@ -1355,4 +1256,289 @@ bool CommitManager::checkoutCommit(
     bool force
 ) {
     return restoreCommit(requestedId, force);
+}
+
+bool CommitManager::createMergeCommit(
+    const std::string& message,
+    const std::string& authorId,
+    const std::string& firstParentId,
+    const std::string& secondParentId,
+    const std::unordered_map<std::string, std::string>& hashes,
+    std::string& createdCommitId
+) {
+    createdCommitId.clear();
+
+    if (message.empty()) {
+        std::cerr << "Merge commit message cannot be empty.\n";
+        return false;
+    }
+
+    if (authorId.empty()) {
+        std::cerr << "Merge commit author cannot be empty.\n";
+        return false;
+    }
+
+    if (firstParentId.empty()) {
+        std::cerr << "First parent commit cannot be empty.\n";
+        return false;
+    }
+
+    if (secondParentId.empty()) {
+        std::cerr << "Second parent commit cannot be empty.\n";
+        return false;
+    }
+
+    if (firstParentId == secondParentId) {
+        std::cerr
+            << "Merge parents must be different commits.\n";
+        return false;
+    }
+
+    std::error_code ec;
+
+    if (!std::filesystem::is_regular_file(
+            objectsPath / firstParentId / "commit.txt", ec) ||
+        ec) {
+        std::cerr << "First parent commit does not exist.\n";
+        return false;
+    }
+
+    ec.clear();
+
+    if (!std::filesystem::is_regular_file(
+            objectsPath / secondParentId / "commit.txt", ec) ||
+        ec) {
+        std::cerr << "Second parent commit does not exist.\n";
+        return false;
+    }
+
+    return createCommitObject(
+        message,
+        authorId,
+        firstParentId,
+        secondParentId,
+        hashes,
+        createdCommitId
+    );
+}
+
+bool CommitManager::createCommitObject(
+    const std::string& message,
+    const std::string& authorId,
+    const std::string& firstParentId,
+    const std::string& secondParentId,
+    const std::unordered_map<std::string, std::string>& hashes,
+    std::string& createdCommitId
+) {
+    createdCommitId.clear();
+
+    if (message.empty()) {
+        std::cerr << "Commit message cannot be empty.\n";
+        return false;
+    }
+
+    if (authorId.empty()) {
+        std::cerr << "Commit author cannot be empty.\n";
+        return false;
+    }
+
+    if (hashes.empty()) {
+        std::cerr << "Cannot create a commit with no files.\n";
+        return false;
+    }
+
+    namespace fs = std::filesystem;
+
+    std::error_code ec;
+
+    const auto now = std::chrono::system_clock::now();
+
+    const auto milliseconds =
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            now.time_since_epoch()
+        ).count();
+
+    const std::string timestampForId =
+        std::to_string(milliseconds);
+
+    const std::time_t currentTime =
+        std::chrono::system_clock::to_time_t(now);
+
+    std::tm timeInfo{};
+
+#ifdef _WIN32
+    localtime_s(&timeInfo, &currentTime);
+#else
+    localtime_r(&currentTime, &timeInfo);
+#endif
+
+    std::ostringstream timestampStream;
+
+    timestampStream << std::put_time(
+        &timeInfo,
+        "%Y-%m-%d %H:%M:%S"
+    );
+
+    const std::string timestamp =
+        timestampStream.str();
+
+    std::vector<std::string> sortedPaths;
+    sortedPaths.reserve(hashes.size());
+
+    for (const auto& entry : hashes) {
+        sortedPaths.push_back(entry.first);
+    }
+
+    std::sort(sortedPaths.begin(), sortedPaths.end());
+
+    std::ostringstream idInput;
+
+    idInput << authorId << '\n'
+            << firstParentId << '\n'
+            << secondParentId << '\n'
+            << message << '\n'
+            << timestampForId << '\n';
+
+    for (const auto& path : sortedPaths) {
+        idInput << path
+                << ':'
+                << hashes.at(path)
+                << '\n';
+    }
+
+    const std::string commitId =
+        HashManager::calculateHashFromString(
+            idInput.str()
+        );
+
+    if (commitId.empty()) {
+        std::cerr << "Could not calculate commit ID.\n";
+        return false;
+    }
+
+    const fs::path finalDir =
+        objectsPath / commitId;
+
+    const fs::path tempDir =
+        objectsPath / (commitId + ".tmp");
+
+    fs::create_directories(objectsPath, ec);
+
+    if (ec) {
+        std::cerr
+            << "Could not prepare objects directory: "
+            << ec.message()
+            << '\n';
+        return false;
+    }
+
+    ec.clear();
+
+    if (fs::exists(finalDir, ec) || ec) {
+        std::cerr
+            << "Commit object already exists or could not be checked.\n";
+        return false;
+    }
+
+    fs::remove_all(tempDir, ec);
+    ec.clear();
+
+    if (!fs::create_directories(tempDir / "files", ec) || ec) {
+        fs::remove_all(tempDir);
+        return false;
+    }
+
+    for (const auto& relativePath : sortedPaths) {
+        const fs::path source =
+            repositoryRoot / relativePath;
+
+        const fs::path destination =
+            tempDir / "files" / relativePath;
+
+        ec.clear();
+
+        if (!fs::is_regular_file(source, ec) || ec) {
+            std::cerr
+                << "Cannot copy missing file: "
+                << relativePath
+                << '\n';
+
+            fs::remove_all(tempDir);
+            return false;
+        }
+
+        fs::create_directories(
+            destination.parent_path(),
+            ec
+        );
+
+        if (ec) {
+            fs::remove_all(tempDir);
+            return false;
+        }
+
+        fs::copy_file(
+            source,
+            destination,
+            fs::copy_options::overwrite_existing,
+            ec
+        );
+
+        if (ec) {
+            std::cerr
+                << "Could not copy file: "
+                << relativePath
+                << '\n';
+
+            fs::remove_all(tempDir);
+            return false;
+        }
+    }
+
+    std::ofstream commitFile(
+        tempDir / "commit.txt"
+    );
+
+    if (!commitFile) {
+        fs::remove_all(tempDir);
+        return false;
+    }
+
+    commitFile
+        << std::quoted(commitId) << '\n'
+        << std::quoted(message) << '\n'
+        << std::quoted(timestamp) << '\n'
+        << std::quoted(authorId) << '\n'
+        << std::quoted(firstParentId) << '\n'
+        << std::quoted(secondParentId) << '\n'
+        << hashes.size() << '\n';
+
+    for (const auto& path : sortedPaths) {
+        commitFile
+            << std::quoted(path) << '\n'
+            << std::quoted(hashes.at(path)) << '\n';
+    }
+
+    commitFile.close();
+
+    if (!commitFile) {
+        fs::remove_all(tempDir);
+        return false;
+    }
+
+    fs::rename(tempDir, finalDir, ec);
+
+    if (ec) {
+        fs::remove_all(tempDir);
+
+        std::cerr
+            << "Could not finalize commit object: "
+            << ec.message()
+            << '\n';
+
+        return false;
+    }
+
+    createdCommitId = commitId;
+    return true;
 }
