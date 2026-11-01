@@ -1,7 +1,7 @@
 #include "member3.h"
+#include "PasswordHasher.h"
+
 #include <iostream>
-#include <windows.h>
-#include <bcrypt.h>
 #include <vector>
 
 // Constructor: Connect to SQLite database
@@ -94,50 +94,8 @@ bool Member3::initializeDatabase() {
 
     return true;
 }
-// Convert bytes into hexadecimal text
-static std::string bytesToHex(
-    const std::vector<unsigned char>& bytes
-) {
-    const char* digits = "0123456789abcdef";
-    std::string result;
 
-    for (unsigned char byte : bytes) {
-        result += digits[byte >> 4];
-        result += digits[byte & 15];
-    }
 
-    return result;
-}
-// Convert hexadecimal text back into bytes
-static std::vector<unsigned char> hexToBytes(
-    const std::string& text
-) {
-    std::vector<unsigned char> result;
-
-    if (text.size() % 2 != 0)
-        return result;
-
-    auto hexValue = [](char c) -> int {
-        if (c >= '0' && c <= '9') return c - '0';
-        if (c >= 'a' && c <= 'f') return c - 'a' + 10;
-        if (c >= 'A' && c <= 'F') return c - 'A' + 10;
-        return -1;
-    };
-
-    for (size_t i = 0; i < text.size(); i += 2) {
-        int first = hexValue(text[i]);
-        int second = hexValue(text[i + 1]);
-
-        if (first < 0 || second < 0)
-            return {};
-
-        result.push_back(
-            static_cast<unsigned char>((first << 4) | second)
-        );
-    }
-
-    return result;
-}
 // Register a new user
 bool Member3::registerUser(
     const std::string& username,
@@ -155,62 +113,22 @@ bool Member3::registerUser(
     }
 
     // Generate a random 16-byte salt
-    std::vector<unsigned char> salt(16);
+    PasswordHash passwordHash;
 
-    NTSTATUS status = BCryptGenRandom(
-        nullptr,
-        salt.data(),
-        static_cast<ULONG>(salt.size()),
-        BCRYPT_USE_SYSTEM_PREFERRED_RNG
-    );
+if (!PasswordHasher::createHash(
+        password,
+        passwordHash
+    )) {
+    std::cout << "Password hashing failed!\n";
+    return false;
+}
 
-    if (status < 0) {
-        std::cout << "Salt generation failed!\n";
-        return false;
-    }
+const std::string& hashText =
+    passwordHash.hash;
 
-    // Open SHA-256 in HMAC mode for PBKDF2
-    BCRYPT_ALG_HANDLE algorithm = nullptr;
-
-    status = BCryptOpenAlgorithmProvider(
-        &algorithm,
-        BCRYPT_SHA256_ALGORITHM,
-        nullptr,
-        BCRYPT_ALG_HANDLE_HMAC_FLAG
-    );
-
-    if (status < 0) {
-        std::cout << "Password hashing initialization failed!\n";
-        return false;
-    }
-
-    std::vector<unsigned char> hash(32);
-
-    // PBKDF2-HMAC-SHA256 with 310,000 iterations
-    status = BCryptDeriveKeyPBKDF2(
-        algorithm,
-        reinterpret_cast<PUCHAR>(
-            const_cast<char*>(password.data())
-        ),
-        static_cast<ULONG>(password.size()),
-        salt.data(),
-        static_cast<ULONG>(salt.size()),
-        310000,
-        hash.data(),
-        static_cast<ULONG>(hash.size()),
-        0
-    );
-
-    BCryptCloseAlgorithmProvider(algorithm, 0);
-
-    if (status < 0) {
-        std::cout << "Password hashing failed!\n";
-        return false;
-    }
-
-    std::string hashText = bytesToHex(hash);
-    std::string saltText = bytesToHex(salt);
-
+const std::string& saltText =
+    passwordHash.salt;
+    
     // Insert user using a prepared SQL statement
     const char* sql =
         "INSERT INTO users "
@@ -410,62 +328,14 @@ bool Member3::login(
 
     sqlite3_finalize(stmt);
 
-    std::vector<unsigned char> salt = hexToBytes(saltText);
-    std::vector<unsigned char> expectedHash = hexToBytes(hashText);
-
-    if (salt.size() != 16 || expectedHash.size() != 32) {
-        std::cout << "Invalid stored password data!\n";
-        return false;
-    }
-
-    BCRYPT_ALG_HANDLE algorithm = nullptr;
-
-    NTSTATUS status = BCryptOpenAlgorithmProvider(
-        &algorithm,
-        BCRYPT_SHA256_ALGORITHM,
-        nullptr,
-        BCRYPT_ALG_HANDLE_HMAC_FLAG
-    );
-
-    if (status < 0) {
-        std::cout << "Password verification failed!\n";
-        return false;
-    }
-
-    std::vector<unsigned char> calculatedHash(32);
-
-    status = BCryptDeriveKeyPBKDF2(
-        algorithm,
-        reinterpret_cast<PUCHAR>(
-            const_cast<char*>(password.data())
-        ),
-        static_cast<ULONG>(password.size()),
-        salt.data(),
-        static_cast<ULONG>(salt.size()),
-        310000,
-        calculatedHash.data(),
-        static_cast<ULONG>(calculatedHash.size()),
-        0
-    );
-
-    BCryptCloseAlgorithmProvider(algorithm, 0);
-
-    if (status < 0) {
-        std::cout << "Password verification failed!\n";
-        return false;
-    }
-
-    // Compare hashes without stopping at the first differing byte
-    unsigned char difference = 0;
-
-    for (size_t i = 0; i < expectedHash.size(); i++) {
-        difference |= expectedHash[i] ^ calculatedHash[i];
-    }
-
-    if (difference != 0) {
-        std::cout << "Invalid username or password!\n";
-        return false;
-    }
+    if (!PasswordHasher::verify(
+        password,
+        hashText,
+        saltText
+    )) {
+    std::cout << "Invalid username or password!\n";
+    return false;
+}
 
     currentUserId = userId;
     currentUsername = username;
@@ -496,6 +366,13 @@ bool Member3::isLoggedIn() const
     return currentUserId != -1;
 }
 
+int Member3::getCurrentUserId() const {
+    return currentUserId;
+}
+
+std::string Member3::getCurrentUsername() const {
+    return currentUsername;
+}
 // Create a new repository for the logged-in user
 bool Member3::createRepository(
     const std::string& repoName,
