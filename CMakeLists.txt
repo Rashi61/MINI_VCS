@@ -14,6 +14,7 @@ add_executable(minivcs
     src/vcs/FileManager.cpp
     src/vcs/IgnoreMatcher.cpp
     src/security/HashManager.cpp
+    src/security/PasswordHasher.cpp
     src/vcs/commit.cpp
     src/vcs/CommitManager.cpp
     src/vcs/IntegrityManager.cpp
@@ -29,17 +30,9 @@ target_include_directories(minivcs PRIVATE
     third_party/sqlite3
 )
 
-if(WIN32)
-    target_link_libraries(minivcs PRIVATE
-        OpenSSL::Crypto
-        bcrypt
-    )
-else()
-    target_link_libraries(minivcs PRIVATE
-        OpenSSL::Crypto
-    )
-endif()
-
+target_link_libraries(minivcs PRIVATE
+    OpenSSL::Crypto
+)
 add_executable(minivcs_branch_tests
     tests/test_branching.cpp
     src/vcs/branch.cpp
