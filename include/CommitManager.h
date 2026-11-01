@@ -8,6 +8,12 @@
 #include <unordered_map>
 #include <vector>
 
+struct HistoryResult {
+    std::vector<Commit> commits;
+    bool valid = true;
+    std::string error;
+};
+
 class CommitManager {
 private:
     std::filesystem::path repositoryRoot;
@@ -18,7 +24,8 @@ private:
 
     std::vector<std::string> findOverwriteConflicts(
         const std::vector<std::string>& paths,
-        const std::unordered_map<std::string, std::string>& hashes) const;
+        const std::unordered_map<std::string, std::string>& hashes
+    ) const;
 
 public:
     explicit CommitManager(
@@ -27,16 +34,38 @@ public:
 
     bool createCommit(const std::string& message);
 
+    HistoryResult readCommitHistory() const;
+
     std::vector<Commit> getCommitHistory() const;
 
     std::string getLatestCommitId() const;
-    bool restoreCommit(const std::string& requestedId, bool force = false);
 
-    std::string resolveCommitId(const std::string& prefix) const;
+    bool updateBranchPointer(
+        const std::string& branchName,
+        const std::string& commitId
+    ) const;
 
-    bool getCommit(const std::string& requestedId, Commit& out) const;
+    bool checkoutCommit(
+        const std::string& requestedId,
+        bool force = false
+    );
 
-    std::filesystem::path getSnapshotPath(const std::string& commitId) const;
+    bool restoreCommit(
+        const std::string& requestedId,
+        bool force = false
+    );
+
+    std::string resolveCommitId(
+        const std::string& prefix
+    ) const;
+
+    bool getCommit(const std::string& requestedId,
+        Commit& out
+    )const;
+
+    std::filesystem::path getSnapshotPath(
+        const std::string& commitId
+    ) const;
 
     bool isSnapshotPruned(const std::string& commitId) const;
 
