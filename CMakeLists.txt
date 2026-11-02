@@ -21,6 +21,7 @@ add_executable(minivcs
     src/RetentionManager.cpp
     src/vcs/DiffManager.cpp
     src/vcs/branch.cpp
+    src/RemoteManager.cpp
     src/member3.cpp
     third_party/sqlite3/sqlite3.c
 )
@@ -84,4 +85,16 @@ add_test(
     COMMAND minivcs_branch_tests
 )
 
+add_executable(minivcs_remote_tests
+    tests/remote_test.cpp
+    src/RemoteManager.cpp
+)
 
+target_include_directories(minivcs_remote_tests PRIVATE
+    include
+)
+
+add_test(
+    NAME minivcs_remote_tests
+    COMMAND minivcs_remote_tests
+)
