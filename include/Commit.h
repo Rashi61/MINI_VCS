@@ -9,7 +9,10 @@ private:
     std::string id;
     std::string message;
     std::string timestamp;
-    std::string parentId;
+    std::string authorId;
+    std::string firstParentId;
+    std::string secondParentId;
+
     std::unordered_map<std::string, std::string> fileHashes;
 
 public:
@@ -23,9 +26,28 @@ public:
         const std::unordered_map<std::string, std::string>& hashes
     );
 
+    Commit(
+        const std::string& commitId,
+        const std::string& commitMessage,
+        const std::string& commitTimestamp,
+        const std::string& commitAuthorId,
+        const std::string& firstParent,
+        const std::string& secondParent,
+        const std::unordered_map<std::string, std::string>& hashes
+    );
+
     const std::string& getId() const;
+
     const std::string& getMessage() const;
+
     const std::string& getTimestamp() const;
+
+    const std::string& getAuthorId() const;
+
+    const std::string& getFirstParentId() const;
+
+    const std::string& getSecondParentId() const;
+
     const std::string& getParentId() const;
 
     const std::unordered_map<std::string, std::string>&
