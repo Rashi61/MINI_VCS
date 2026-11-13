@@ -13,3 +13,10 @@ build/
 build-tests/
 __pycache__/
 .vs/
+# Python compiled files
+*.py[cod]
+
+# Local server database
+server/data/*.db
+server/data/*.sqlite
+server/data/*.sqlite3
