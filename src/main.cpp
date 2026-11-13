@@ -139,6 +139,31 @@ int main(int argc, char* argv[]) {
 
     const std::string command = argv[1];
 
+    if (command == "help" || command == "--help" || command == "-h") {
+        std::cout << "MiniVCS - Mini Version Control System\n";
+        std::cout << "Commands:\n";
+        std::cout << "  minivcs auth\n";
+        std::cout << "  minivcs init [project-path]\n";
+        std::cout << "  minivcs add <file>\n";
+        std::cout << "  minivcs remove <file>\n";
+        std::cout << "  minivcs tracked\n";
+        std::cout << "  minivcs hash <file>\n";
+        std::cout << "  minivcs commit <message>\n";
+        std::cout << "  minivcs history\n";
+        std::cout << "  minivcs status\n";
+        std::cout << "  minivcs restore <commit-id|prefix> [--force]\n";
+        std::cout << "  minivcs show <commit-id|prefix>\n";
+        std::cout << "  minivcs diff [<commit>] [<commit>]\n";
+        std::cout << "  minivcs verify\n";
+        std::cout << "  minivcs retention "
+                    "[status|set <days>|cleanup [--dry-run]|log]\n";
+        std::cout << "  minivcs branch create <name>\n";
+        std::cout << "  minivcs branches\n";
+        std::cout << "  minivcs switch <name> [--force]\n";
+        std::cout << "  minivcs delete-branch <name>\n";
+        return 0;
+    }
+
     if (command == "init") {
         const std::filesystem::path projectPath =
             (argc >= 3)
