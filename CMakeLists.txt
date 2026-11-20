@@ -85,29 +85,19 @@ add_test(
     COMMAND minivcs_branch_tests
 )
 
+# ---- Member 4: remote repository tests ----
+
 add_executable(minivcs_remote_tests
     tests/remote_test.cpp
     src/RemoteManager.cpp
 )
 
-
-# ---- Member 4: remote repository tests ----
-add_executable(remote_test
-    tests/remote_test.cpp
-    src/RemoteManager.cpp
-)
-
-target_include_directories(remote_test PRIVATE
-    include
-)
-
-add_test(
-    NAME minivcs_remote_tests
-    COMMAND remote_test
-    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+target_include_directories(minivcs_remote_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
 )
 
 add_test(
     NAME minivcs_remote_tests
     COMMAND minivcs_remote_tests
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
 )
