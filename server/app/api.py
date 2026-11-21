@@ -24,7 +24,7 @@ from .repository_service import (
     user_can_view_repository,
     save_and_stage_file,
 )
-
+from flask_cors import CORS
 
 def success(message, data=None, status=200):
     return jsonify(
@@ -87,6 +87,14 @@ def create_app() -> Flask:
     app = Flask(__name__)
     app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024
     settings = load_settings()
+
+    CORS(
+        app,
+        origins=[settings.frontend_origin],
+        supports_credentials=False,
+        allow_headers=["Content-Type", "Authorization"],
+        methods=["GET", "POST", "OPTIONS"],
+    )
 
     app.config["MINIVCS_SETTINGS"] = settings
 

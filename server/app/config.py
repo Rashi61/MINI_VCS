@@ -29,6 +29,7 @@ class ServerSettings:
     repository_root: Path
     database_path: Path
     minivcs_executable: Path
+    frontend_origin: str
 
 
 def load_settings() -> ServerSettings:
@@ -57,10 +58,16 @@ def load_settings() -> ServerSettings:
         )
     ).resolve()
 
+    frontend_origin = os.getenv(
+        "MINIVCS_FRONTEND_ORIGIN",
+        "http://127.0.0.1:5500",
+    )
+
     return ServerSettings(
         host=os.getenv("MINIVCS_HOST", "127.0.0.1"),
         port=int(os.getenv("MINIVCS_PORT", "8000")),
         debug=_read_bool("MINIVCS_DEBUG", False),
+        frontend_origin=frontend_origin,
         project_root=PROJECT_ROOT,
         repository_root=repository_root,
         database_path=database_path,
