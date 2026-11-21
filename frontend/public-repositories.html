@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+  >
+  <title>Public MiniVCS Repositories</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <main class="page-shell">
+    <header class="page-header">
+      <div>
+        <h1>Public repositories</h1>
+        <p>
+          Browse repositories shared publicly on MiniVCS.
+        </p>
+      </div>
+
+      <a href="login.html" class="button">
+        Login
+      </a>
+    </header>
+
+    <section class="panel">
+      <h2>Available repositories</h2>
+
+      <p
+        id="publicRepositoryMessage"
+        class="msg"
+        role="status"
+      >
+        Loading repositories...
+      </p>
+
+      <div
+        id="publicRepositoryList"
+        class="repository-list"
+      ></div>
+    </section>
+
+    <section
+      id="publicRepositoryDetails"
+      class="panel"
+      hidden
+    >
+      <h2 id="publicRepositoryName">
+        Repository details
+      </h2>
+
+      <dl class="repository-metadata">
+        <dt>Owner</dt>
+        <dd id="publicRepositoryOwner">-</dd>
+
+        <dt>Visibility</dt>
+        <dd id="publicRepositoryVisibility">-</dd>
+
+        <dt>Description</dt>
+        <dd id="publicRepositoryDescription">-</dd>
+      </dl>
+    </section>
+  </main>
+
+  <script src="js/public-repositories.js"></script>
+</body>
+</html>

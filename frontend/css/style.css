@@ -196,3 +196,41 @@ button {
     width: 100%;
   }
 }
+.repository-list {
+  display: grid;
+  grid-template-columns:
+    repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.repository-card {
+  padding: 16px;
+  border: 1px solid #d0d7de;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.repository-card h3 {
+  margin-top: 0;
+  overflow-wrap: anywhere;
+}
+
+.repository-card button {
+  margin-top: 8px;
+}
+
+.repository-metadata {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: 10px 16px;
+}
+
+.repository-metadata dt {
+  font-weight: 700;
+}
+
+.repository-metadata dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
