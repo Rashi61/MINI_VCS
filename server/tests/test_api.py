@@ -308,6 +308,90 @@ class MiniVCSApiTests(unittest.TestCase):
             create_response.status_code,
             401,
         )
+    def test_private_repository_requires_access(self):
+        token = self.register_and_login()
+
+        response = self.client.post(
+            "/api/repositories",
+            headers={
+                "Authorization": f"Bearer {token}",
+            },
+            json={
+                "name": "private-details",
+                "visibility": "private",
+            },
+        )
+
+        self.assertEqual(
+            response.status_code,
+            201,
+        )
+
+        repository_id = (
+            response
+            .get_json()["data"]["id"]
+        )
+
+        details = self.client.get(
+            f"/api/repositories/{repository_id}"
+        )
+
+        self.assertEqual(
+            details.status_code,
+            403,
+        )
+
+        authorized_details = self.client.get(
+            f"/api/repositories/{repository_id}",
+            headers={
+                "Authorization": f"Bearer {token}",
+            },
+        )
+
+        self.assertEqual(
+            authorized_details.status_code,
+            200,
+        )
+    def test_public_repository_details_are_visible(self):
+        token = self.register_and_login()
+
+        response = self.client.post(
+            "/api/repositories",
+            headers={
+                "Authorization": f"Bearer {token}",
+            },
+            json={
+                "name": "public-details",
+                "visibility": "public",
+            },
+        )
+
+        self.assertEqual(
+            response.status_code,
+            201,
+        )
+
+        repository_id = (
+            response
+            .get_json()["data"]["id"]
+        )
+
+        details = self.client.get(
+            f"/api/repositories/{repository_id}"
+        )
+
+        self.assertEqual(
+            details.status_code,
+            200,
+        )
+
+        body = details.get_json()
+
+        self.assertTrue(body["ok"])
+        self.assertEqual(
+            body["data"]["name"],
+            "public-details",
+        )
 
 
 if __name__ == "__main__":

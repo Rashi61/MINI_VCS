@@ -16,7 +16,10 @@ from .database import (
 from .repository_service import (
     RepositoryServiceError,
     create_repository,
+    get_repository,
     list_repositories,
+    run_repository_command,
+    user_can_view_repository,
 )
 
 
@@ -242,6 +245,117 @@ def create_app() -> Flask:
                 str(error),
                 "REPOSITORY_ERROR",
                 400,
+            )
+    @app.get(
+        "/api/repositories/<int:repository_id>"
+    )
+    def repository_details(repository_id):
+        user_id = current_user_id()
+
+        try:
+            repository = get_repository(
+                settings,
+                repository_id,
+            )
+
+            if repository is None:
+                return failure(
+                    "Repository was not found.",
+                    "REPOSITORY_NOT_FOUND",
+                    404,
+                )
+
+            if not user_can_view_repository(
+                settings,
+                repository,
+                user_id,
+            ):
+                return failure(
+                    "You do not have permission to view this repository.",
+                    "PERMISSION_DENIED",
+                    403,
+                )
+
+            return success(
+                "Repository details loaded.",
+                repository,
+            )
+
+        except RepositoryServiceError as error:
+            return failure(
+                str(error),
+                "REPOSITORY_ERROR",
+                400,
+            )
+
+    @app.get(
+        "/api/repositories/<int:repository_id>/status"
+    )
+    def repository_status(repository_id):
+        user_id = current_user_id()
+
+        try:
+            result = run_repository_command(
+                settings,
+                repository_id,
+                ["status"],
+                user_id,
+            )
+
+            return success(
+                "Repository status loaded.",
+                {
+                    "repository": result["repository"],
+                    "output": result["output"],
+                },
+            )
+
+        except RepositoryServiceError as error:
+            status = (
+                403
+                if "permission" in str(error).lower()
+                else 404
+            )
+
+            return failure(
+                str(error),
+                "REPOSITORY_STATUS_ERROR",
+                status,
+            )
+
+    @app.get(
+        "/api/repositories/<int:repository_id>/history"
+    )
+    def repository_history(repository_id):
+        user_id = current_user_id()
+
+        try:
+            result = run_repository_command(
+                settings,
+                repository_id,
+                ["history"],
+                user_id,
+            )
+
+            return success(
+                "Repository history loaded.",
+                {
+                    "repository": result["repository"],
+                    "output": result["output"],
+                },
+            )
+
+        except RepositoryServiceError as error:
+            status = (
+                403
+                if "permission" in str(error).lower()
+                else 404
+            )
+
+            return failure(
+                str(error),
+                "REPOSITORY_HISTORY_ERROR",
+                status,
             )
 
     return app

@@ -72,7 +72,7 @@ def _initialize_minivcs_repository(
         parents=True,
         exist_ok=True,
     )
-    
+
     executable = settings.minivcs_executable
     
     if not executable.is_file():
@@ -283,3 +283,165 @@ def list_repositories(
         ]
     finally:
         connection.close()
+def get_repository(
+    settings: ServerSettings,
+    repository_id: int,
+) -> dict | None:
+    if not isinstance(repository_id, int) or repository_id <= 0:
+        raise RepositoryServiceError(
+            "Repository ID must be a positive integer."
+        )
+
+    connection = get_connection(
+        settings.database_path
+    )
+
+    try:
+        row = connection.execute(
+            """
+            SELECT
+                repositories.id,
+                repositories.name,
+                repositories.owner_id,
+                repositories.visibility,
+                repositories.created_at,
+                users.username AS owner_username
+            FROM repositories
+            JOIN users
+                ON users.id = repositories.owner_id
+            WHERE repositories.id = ?
+            """,
+            (repository_id,),
+        ).fetchone()
+
+        if row is None:
+            return None
+
+        return {
+            "id": row["id"],
+            "name": row["name"],
+            "owner_id": row["owner_id"],
+            "owner_username": row["owner_username"],
+            "visibility": row["visibility"],
+            "created_at": row["created_at"],
+        }
+    finally:
+        connection.close()
+
+
+def user_can_view_repository(
+    settings: ServerSettings,
+    repository: dict,
+    user_id: int | None,
+) -> bool:
+    if repository["visibility"] == "public":
+        return True
+
+    if user_id is None:
+        return False
+
+    if repository["owner_id"] == user_id:
+        return True
+
+    connection = get_connection(
+        settings.database_path
+    )
+
+    try:
+        member = connection.execute(
+            """
+            SELECT 1
+            FROM repository_members
+            WHERE repository_id = ?
+              AND user_id = ?
+            """,
+            (
+                repository["id"],
+                user_id,
+            ),
+        ).fetchone()
+
+        return member is not None
+    finally:
+        connection.close()
+
+
+def run_repository_command(
+    settings: ServerSettings,
+    repository_id: int,
+    arguments: list[str],
+    user_id: int | None,
+) -> dict:
+    repository = get_repository(
+        settings,
+        repository_id,
+    )
+
+    if repository is None:
+        raise RepositoryServiceError(
+            "Repository was not found."
+        )
+
+    if not user_can_view_repository(
+        settings,
+        repository,
+        user_id,
+    ):
+        raise RepositoryServiceError(
+            "You do not have permission to view this repository."
+        )
+
+    path = repository_path(
+        settings,
+        repository_id,
+    )
+
+    if not path.is_dir():
+        raise RepositoryServiceError(
+            "Repository storage directory is missing."
+        )
+
+    executable = settings.minivcs_executable
+
+    if not executable.is_file():
+        raise RepositoryServiceError(
+            "MiniVCS executable was not found."
+        )
+
+    allowed_commands = {
+        "status",
+        "history",
+    }
+
+    if not arguments or arguments[0] not in allowed_commands:
+        raise RepositoryServiceError(
+            "Unsupported repository command."
+        )
+
+    completed = subprocess.run(
+        [
+            str(executable),
+            *arguments,
+        ],
+        cwd=str(path),
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+
+    output = completed.stdout.strip()
+    error_output = completed.stderr.strip()
+
+    if completed.returncode != 0:
+        raise RepositoryServiceError(
+            error_output
+            or output
+            or "MiniVCS command failed."
+        )
+
+    return {
+        "repository": repository,
+        "command": arguments[0],
+        "output": output,
+    }
