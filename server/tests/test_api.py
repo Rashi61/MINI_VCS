@@ -701,6 +701,69 @@ class MiniVCSApiTests(unittest.TestCase):
             switch_response
             .get_json()["ok"]
         )
+    def test_remote_push_and_pull(self):
+        token = self.register_and_login()
+
+        create_response = self.client.post(
+            "/api/repositories",
+            headers={
+                "Authorization": f"Bearer {token}",
+            },
+            json={
+                "name": "remote-api-demo",
+                "visibility": "private",
+            },
+        )
+
+        self.assertEqual(
+            create_response.status_code,
+            201,
+        )
+
+        repository_id = (
+            create_response
+            .get_json()["data"]["id"]
+        )
+
+        upload_response = self.client.post(
+            f"/api/repositories/{repository_id}/files",
+            headers={
+                "Authorization": f"Bearer {token}",
+            },
+            data={
+                "path": "remote-file.txt",
+                "file": (
+                    io.BytesIO(b"remote API test"),
+                    "remote-file.txt",
+                ),
+            },
+            content_type="multipart/form-data",
+        )
+
+        self.assertEqual(
+            upload_response.status_code,
+            201,
+        )
+
+        push_response = self.client.post(
+            f"/api/repositories/{repository_id}/remote/push",
+            headers={
+                "Authorization": f"Bearer {token}",
+            },
+        )
+
+        self.assertEqual(
+            push_response.status_code,
+            200,
+        )
+
+        body = push_response.get_json()
+
+        self.assertTrue(body["ok"])
+        self.assertEqual(
+            body["data"]["operation"],
+            "push",
+        )
         
 if __name__ == "__main__":
     unittest.main()

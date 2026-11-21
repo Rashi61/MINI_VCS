@@ -693,3 +693,123 @@ def save_and_stage_file(
         "path": safe_relative_path.as_posix(),
         "output": output,
     }
+def remote_path(
+    settings: ServerSettings,
+    repository_id: int,
+) -> Path:
+    if not isinstance(repository_id, int) or repository_id <= 0:
+        raise RepositoryServiceError(
+            "Repository ID must be a positive integer."
+        )
+
+    root = settings.remote_root.resolve()
+    path = (
+        root / str(repository_id)
+    ).resolve()
+
+    if path.parent != root:
+        raise RepositoryServiceError(
+            "Invalid remote storage location."
+        )
+
+    return path
+
+
+def run_remote_operation(
+    settings: ServerSettings,
+    repository_id: int,
+    operation: str,
+    user_id: int | None,
+) -> dict:
+    repository = get_repository(
+        settings,
+        repository_id,
+    )
+
+    if repository is None:
+        raise RepositoryServiceError(
+            "Repository was not found."
+        )
+
+    allowed_operations = {
+        "clone",
+        "push",
+        "pull",
+    }
+
+    if operation not in allowed_operations:
+        raise RepositoryServiceError(
+            "Unsupported remote operation."
+        )
+
+    if operation == "push":
+        required_permission = "push"
+    else:
+        required_permission = "clone"
+
+    if not user_can_perform(
+        settings,
+        repository,
+        user_id,
+        required_permission,
+    ):
+        raise RepositoryServiceError(
+            "You do not have permission for this remote operation."
+        )
+
+    repository_root = repository_path(
+        settings,
+        repository_id,
+    )
+
+    if not repository_root.is_dir():
+        raise RepositoryServiceError(
+            "Repository storage directory is missing."
+        )
+
+    configured_remote = remote_path(
+        settings,
+        repository_id,
+    )
+
+    configured_remote.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    executable = settings.minivcs_executable
+
+    if not executable.is_file():
+        raise RepositoryServiceError(
+            "MiniVCS executable was not found."
+        )
+
+    completed = subprocess.run(
+        [
+            str(executable),
+            "remote",
+            operation,
+            str(configured_remote),
+        ],
+        cwd=str(repository_root),
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+
+    output = completed.stdout.strip()
+    error_output = completed.stderr.strip()
+
+    if completed.returncode != 0:
+        raise RepositoryServiceError(
+            error_output
+            or output
+            or "Remote operation failed."
+        )
+
+    return {
+        "repository": repository,
+        "operation": operation,
+        "output": output,
+    }

@@ -27,6 +27,7 @@ class ServerSettings:
     debug: bool
     project_root: Path
     repository_root: Path
+    remote_root: Path
     database_path: Path
     minivcs_executable: Path
     frontend_origin: str
@@ -62,6 +63,12 @@ def load_settings() -> ServerSettings:
         "MINIVCS_FRONTEND_ORIGIN",
         "http://127.0.0.1:5500",
     )
+    remote_root = Path(
+        os.getenv(
+            "MINIVCS_REMOTE_ROOT",
+            str(PROJECT_ROOT / "server-data" / "remotes"),
+        )
+    ).resolve()
 
     return ServerSettings(
         host=os.getenv("MINIVCS_HOST", "127.0.0.1"),
@@ -71,5 +78,6 @@ def load_settings() -> ServerSettings:
         project_root=PROJECT_ROOT,
         repository_root=repository_root,
         database_path=database_path,
+        remote_root=remote_root,
         minivcs_executable=minivcs_executable,
     )

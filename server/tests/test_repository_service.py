@@ -37,8 +37,10 @@ class RepositoryServiceTests(unittest.TestCase):
             host="127.0.0.1",
             port=8000,
             debug=False,
+            frontend_origin="http://127.0.0.1:5500",
             project_root=self.temp_dir,
             repository_root=self.repository_root,
+            remote_root=self.temp_dir / "remotes",
             database_path=self.database_path,
             minivcs_executable=self.executable,
         )

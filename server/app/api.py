@@ -18,6 +18,7 @@ from .repository_service import (
     create_repository,
     get_repository,
     list_repositories,
+    run_remote_operation,
     run_repository_command,
     user_can_view_repository,
     run_repository_write_command,
@@ -696,6 +697,59 @@ def create_app() -> Flask:
             return failure(
                 message,
                 "BRANCH_SWITCH_ERROR",
+                status,
+            )
+    @app.post(
+        "/api/repositories/<int:repository_id>/remote/<operation>"
+    )
+    @require_login
+    def repository_remote_operation(
+        user_id,
+        repository_id,
+        operation,
+    ):
+        if operation not in {
+            "clone",
+            "push",
+            "pull",
+        }:
+            return failure(
+                "Unsupported remote operation.",
+                "REMOTE_OPERATION_ERROR",
+                400,
+            )
+
+        try:
+            result = run_remote_operation(
+                settings,
+                repository_id,
+                operation,
+                user_id,
+            )
+
+            return success(
+                f"Remote {operation} completed.",
+                {
+                    "repository": result["repository"],
+                    "operation": result["operation"],
+                    "output": result["output"],
+                },
+            )
+
+        except RepositoryServiceError as error:
+            message = str(error)
+            lowered = message.lower()
+
+            if "permission" in lowered:
+                status = 403
+            elif "not found" in lowered:
+                status = 404
+            else:
+                status = 400
+
+            return failure(
+                message,
+                "REMOTE_OPERATION_ERROR",
                 status,
             )    
     return app
