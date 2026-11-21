@@ -20,6 +20,8 @@ from .repository_service import (
     list_repositories,
     run_repository_command,
     user_can_view_repository,
+    run_repository_write_command,
+    user_can_view_repository,
 )
 
 
@@ -357,5 +359,188 @@ def create_app() -> Flask:
                 "REPOSITORY_HISTORY_ERROR",
                 status,
             )
+    @app.get(
+        "/api/repositories/<int:repository_id>/branches"
+    )
+    def repository_branches(repository_id):
+        user_id = current_user_id()
 
+        try:
+            result = run_repository_command(
+                settings,
+                repository_id,
+                ["branches"],
+                user_id,
+            )
+
+            return success(
+                "Repository branches loaded.",
+                {
+                    "repository": result["repository"],
+                    "output": result["output"],
+                },
+            )
+
+        except RepositoryServiceError as error:
+            message = str(error)
+
+            if "permission" in message.lower():
+                status = 403
+            elif "not found" in message.lower():
+                status = 404
+            else:
+                status = 400
+
+            return failure(
+                message,
+                "BRANCH_LIST_ERROR",
+                status,
+            )
+
+    @app.post(
+        "/api/repositories/<int:repository_id>/branches"
+    )
+    @require_login
+    def create_repository_branch(user_id, repository_id):
+        payload = request.get_json(silent=True) or {}
+        branch_name = payload.get("name", "")
+
+        if not isinstance(branch_name, str):
+            return failure(
+                "Branch name must be a string.",
+                "VALIDATION_ERROR",
+                400,
+            )
+
+        branch_name = branch_name.strip()
+
+        if not branch_name:
+            return failure(
+                "Branch name is required.",
+                "VALIDATION_ERROR",
+                400,
+            )
+
+        if len(branch_name) > 64:
+            return failure(
+                "Branch name is too long.",
+                "VALIDATION_ERROR",
+                400,
+            )
+
+        if any(
+            character.isspace()
+            for character in branch_name
+        ):
+            return failure(
+                "Branch name cannot contain spaces.",
+                "VALIDATION_ERROR",
+                400,
+            )
+
+        try:
+            result = run_repository_write_command(
+                settings,
+                repository_id,
+                [
+                    "branch",
+                    "create",
+                    branch_name,
+                ],
+                user_id,
+                "create_branch",
+            )
+
+            return success(
+                "Branch created successfully.",
+                {
+                    "repository": result["repository"],
+                    "output": result["output"],
+                },
+                201,
+            )
+
+        except RepositoryServiceError as error:
+            message = str(error)
+
+            if "permission" in message.lower():
+                status = 403
+            elif "not found" in message.lower():
+                status = 404
+            else:
+                status = 400
+
+            return failure(
+                message,
+                "BRANCH_CREATE_ERROR",
+                status,
+            )
+    @app.post(
+        "/api/repositories/<int:repository_id>/commit"
+    )
+    @require_login
+    def commit_repository(user_id, repository_id):
+        payload = request.get_json(silent=True) or {}
+        message = payload.get("message", "")
+
+        if not isinstance(message, str):
+            return failure(
+                "Commit message must be a string.",
+                "VALIDATION_ERROR",
+                400,
+            )
+
+        message = message.strip()
+
+        if not message:
+            return failure(
+                "Commit message is required.",
+                "VALIDATION_ERROR",
+                400,
+            )
+
+        if len(message) > 500:
+            return failure(
+                "Commit message is too long.",
+                "VALIDATION_ERROR",
+                400,
+            )
+
+        try:
+            result = run_repository_write_command(
+                settings,
+                repository_id,
+                [
+                    "commit",
+                    message,
+                ],
+                user_id,
+                "push",
+            )
+
+            return success(
+                "Commit created successfully.",
+                {
+                    "repository": result["repository"],
+                    "output": result["output"],
+                },
+                201,
+            )
+
+        except RepositoryServiceError as error:
+            message_text = str(error)
+
+            if "permission" in message_text.lower():
+                status = 403
+            elif "not found" in message_text.lower():
+                status = 404
+            else:
+                status = 400
+
+            return failure(
+                message_text,
+                "COMMIT_ERROR",
+                status,
+            )
+        
     return app

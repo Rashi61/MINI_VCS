@@ -392,6 +392,140 @@ class MiniVCSApiTests(unittest.TestCase):
             body["data"]["name"],
             "public-details",
         )
+    def test_list_branches_for_public_repository(self):
+        token = self.register_and_login()
+
+        create_response = self.client.post(
+            "/api/repositories",
+            headers={
+                "Authorization": f"Bearer {token}",
+            },
+            json={
+                "name": "branch-list-demo",
+                "visibility": "public",
+            },
+        )
+
+        self.assertEqual(
+            create_response.status_code,
+            201,
+        )
+
+        repository_id = (
+            create_response
+            .get_json()["data"]["id"]
+        )
+
+        branches_response = self.client.get(
+            f"/api/repositories/{repository_id}/branches"
+        )
+
+        self.assertEqual(
+            branches_response.status_code,
+            200,
+        )
+
+        body = branches_response.get_json()
+
+        self.assertTrue(body["ok"])
+        self.assertIn(
+            "main",
+            body["data"]["output"],
+        )
+
+    def test_create_branch_requires_permission(self):
+        token = self.register_and_login()
+
+        create_response = self.client.post(
+            "/api/repositories",
+            headers={
+                "Authorization": f"Bearer {token}",
+            },
+            json={
+                "name": "branch-create-demo",
+                "visibility": "public",
+            },
+        )
+
+        self.assertEqual(
+            create_response.status_code,
+            201,
+        )
+
+        repository_id = (
+            create_response
+            .get_json()["data"]["id"]
+        )
+
+        branch_response = self.client.post(
+            f"/api/repositories/{repository_id}/branches",
+            headers={
+                "Authorization": f"Bearer {token}",
+            },
+            json={
+                "name": "feature-api",
+            },
+        )
+
+        self.assertEqual(
+            branch_response.status_code,
+            201,
+        )
+
+        self.assertIn(
+            "feature-api",
+            branch_response
+            .get_json()["data"]["output"],
+        )
+
+    def test_commit_requires_message(self):
+        token = self.register_and_login()
+
+        create_response = self.client.post(
+            "/api/repositories",
+            headers={
+                "Authorization": f"Bearer {token}",
+            },
+            json={
+                "name": "commit-validation-demo",
+                "visibility": "private",
+            },
+        )
+
+        self.assertEqual(
+            create_response.status_code,
+            201,
+        )
+
+        repository_id = (
+            create_response
+            .get_json()["data"]["id"]
+        )
+
+        commit_response = self.client.post(
+            f"/api/repositories/{repository_id}/commit",
+            headers={
+                "Authorization": f"Bearer {token}",
+            },
+            json={
+                "message": "",
+            },
+        )
+
+        self.assertEqual(
+            commit_response.status_code,
+            400,
+        )
+
+        body = commit_response.get_json()
+
+        self.assertFalse(body["ok"])
+        self.assertEqual(
+            body["error_code"],
+            "VALIDATION_ERROR",
+        )
+
+        
 
 
 if __name__ == "__main__":
