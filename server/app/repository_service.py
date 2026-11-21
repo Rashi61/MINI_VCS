@@ -5,7 +5,10 @@ from pathlib import Path
 
 from .config import ServerSettings
 from .database import get_connection
-
+from .permissions import (
+    get_repository_role,
+    has_permission,
+)
 
 REPOSITORY_NAME_PATTERN = re.compile(
     r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
@@ -411,6 +414,111 @@ def run_repository_command(
     allowed_commands = {
         "status",
         "history",
+        "branches",
+    }
+
+    if not arguments or arguments[0] not in allowed_commands:
+        raise RepositoryServiceError(
+            "Unsupported repository command."
+        )
+
+    completed = subprocess.run(
+        [
+            str(executable),
+            *arguments,
+        ],
+        cwd=str(path),
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+
+    output = completed.stdout.strip()
+    error_output = completed.stderr.strip()
+
+    if completed.returncode != 0:
+        raise RepositoryServiceError(
+            error_output
+            or output
+            or "MiniVCS command failed."
+        )
+
+    return {
+        "repository": repository,
+        "command": arguments[0],
+        "output": output,
+    }
+def user_can_perform(
+    settings: ServerSettings,
+    repository: dict,
+    user_id: int | None,
+    action: str,
+) -> bool:
+    if user_id is None:
+        return False
+
+    role = get_repository_role(
+        user_id,
+        repository["id"],
+    )
+
+    if role is None:
+        return False
+
+    return has_permission(
+        role,
+        action,
+    )
+
+
+def run_repository_write_command(
+    settings: ServerSettings,
+    repository_id: int,
+    arguments: list[str],
+    user_id: int | None,
+    permission: str,
+) -> dict:
+    repository = get_repository(
+        settings,
+        repository_id,
+    )
+
+    if repository is None:
+        raise RepositoryServiceError(
+            "Repository was not found."
+        )
+
+    if not user_can_perform(
+        settings,
+        repository,
+        user_id,
+        permission,
+    ):
+        raise RepositoryServiceError(
+            "You do not have permission to perform this operation."
+        )
+
+    path = repository_path(
+        settings,
+        repository_id,
+    )
+
+    if not path.is_dir():
+        raise RepositoryServiceError(
+            "Repository storage directory is missing."
+        )
+
+    executable = settings.minivcs_executable
+
+    if not executable.is_file():
+        raise RepositoryServiceError(
+            "MiniVCS executable was not found."
+        )
+
+    allowed_commands = {
+        "commit",
+        "branch",
     }
 
     if not arguments or arguments[0] not in allowed_commands:
