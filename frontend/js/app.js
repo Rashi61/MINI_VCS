@@ -1,4 +1,5 @@
-const byId = (id) => document.getElementById(id);
+const byId = (id) =>
+  document.getElementById(id);
 
 function showMessage(message, ok) {
   const element = byId("uploadMessage");
@@ -14,41 +15,23 @@ function showMessage(message, ok) {
     : "msg err";
 }
 
-function getToken() {
-  return window.localStorage.getItem(
-    "minivcs_session_token"
-  );
-}
-
 function getRepositoryId() {
   const value = byId("repositoryId")?.value;
-
   const repositoryId = Number.parseInt(
     value,
     10
   );
 
-  if (!Number.isInteger(repositoryId) || repositoryId <= 0) {
+  if (
+    !Number.isInteger(repositoryId) ||
+    repositoryId <= 0
+  ) {
     throw new Error(
-      "Enter a valid repository ID."
+      "Select a valid repository."
     );
   }
 
   return repositoryId;
-}
-
-function authorizationHeaders() {
-  const token = getToken();
-
-  if (!token) {
-    throw new Error(
-      "No login token was found in this browser."
-    );
-  }
-
-  return {
-    Authorization: `Bearer ${token}`,
-  };
 }
 
 async function uploadAndStage() {
@@ -74,22 +57,13 @@ async function uploadAndStage() {
     form.append("path", path);
     form.append("file", file);
 
-    const response = await fetch(
+    const result = await apiRequest(
       `/api/repositories/${repositoryId}/files`,
       {
         method: "POST",
-        headers: authorizationHeaders(),
         body: form,
       }
     );
-
-    const result = await response.json();
-
-    if (!response.ok || !result.ok) {
-      throw new Error(
-        result.message || "Upload failed."
-      );
-    }
 
     showMessage(
       `Uploaded and staged: ${result.data.path}`,
@@ -103,7 +77,9 @@ async function uploadAndStage() {
 async function createCommit() {
   try {
     const repositoryId = getRepositoryId();
-    const message = byId("commitMessage")?.value.trim();
+    const message = byId(
+      "commitMessage"
+    )?.value.trim();
 
     if (!message) {
       throw new Error(
@@ -111,12 +87,11 @@ async function createCommit() {
       );
     }
 
-    const response = await fetch(
+    const result = await apiRequest(
       `/api/repositories/${repositoryId}/commit`,
       {
         method: "POST",
         headers: {
-          ...authorizationHeaders(),
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
@@ -125,16 +100,8 @@ async function createCommit() {
       }
     );
 
-    const result = await response.json();
-
-    if (!response.ok || !result.ok) {
-      throw new Error(
-        result.message || "Commit failed."
-      );
-    }
-
     showMessage(
-      "Commit created successfully.",
+      result.message,
       true
     );
 

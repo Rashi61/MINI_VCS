@@ -26,3 +26,5 @@ server-data/*.sqlite3
 
 server/config/.env
 .env
+
+server-data/
