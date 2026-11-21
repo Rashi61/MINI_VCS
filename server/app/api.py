@@ -613,5 +613,89 @@ def create_app() -> Flask:
                 "FILE_UPLOAD_ERROR",
                 status,
             )
-        
+    @app.post(
+        "/api/repositories/<int:repository_id>/branches/switch"
+    )
+    @require_login
+    def switch_repository_branch(
+        user_id,
+        repository_id,
+    ):
+        payload = request.get_json(
+            silent=True
+        ) or {}
+
+        branch_name = payload.get(
+            "name",
+            "",
+        )
+
+        if not isinstance(branch_name, str):
+            return failure(
+                "Branch name must be a string.",
+                "VALIDATION_ERROR",
+                400,
+            )
+
+        branch_name = branch_name.strip()
+
+        if not branch_name:
+            return failure(
+                "Branch name is required.",
+                "VALIDATION_ERROR",
+                400,
+            )
+
+        if len(branch_name) > 64:
+            return failure(
+                "Branch name is too long.",
+                "VALIDATION_ERROR",
+                400,
+            )
+
+        if any(
+            character.isspace()
+            for character in branch_name
+        ):
+            return failure(
+                "Branch name cannot contain spaces.",
+                "VALIDATION_ERROR",
+                400,
+            )
+
+        try:
+            result = run_repository_write_command(
+                settings,
+                repository_id,
+                [
+                    "switch",
+                    branch_name,
+                ],
+                user_id,
+                "push",
+            )
+
+            return success(
+                "Branch switched successfully.",
+                {
+                    "repository": result["repository"],
+                    "output": result["output"],
+                },
+            )
+
+        except RepositoryServiceError as error:
+            message = str(error)
+
+            if "permission" in message.lower():
+                status = 403
+            elif "not found" in message.lower():
+                status = 404
+            else:
+                status = 400
+
+            return failure(
+                message,
+                "BRANCH_SWITCH_ERROR",
+                status,
+            )    
     return app

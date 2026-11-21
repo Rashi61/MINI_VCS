@@ -519,6 +519,7 @@ def run_repository_write_command(
     allowed_commands = {
         "commit",
         "branch",
+        "switch",
     }
 
     if not arguments or arguments[0] not in allowed_commands:

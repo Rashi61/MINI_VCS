@@ -641,6 +641,66 @@ class MiniVCSApiTests(unittest.TestCase):
             body["error_code"],
             "FILE_UPLOAD_ERROR",
         )
+    def test_switch_branch_requires_permission(self):
+        token = self.register_and_login()
+
+        create_response = self.client.post(
+            "/api/repositories",
+            headers={
+                "Authorization": f"Bearer {token}",
+            },
+            json={
+                "name": "branch-switch-demo",
+                "visibility": "private",
+            },
+        )
+
+        self.assertEqual(
+            create_response.status_code,
+            201,
+        )
+
+        repository_id = (
+            create_response
+            .get_json()["data"]["id"]
+        )
+
+        create_branch_response = (
+            self.client.post(
+                f"/api/repositories/{repository_id}/branches",
+                headers={
+                    "Authorization": f"Bearer {token}",
+                },
+                json={
+                    "name": "feature-switch",
+                },
+            )
+        )
+
+        self.assertEqual(
+            create_branch_response.status_code,
+            201,
+        )
+
+        switch_response = self.client.post(
+            f"/api/repositories/{repository_id}/branches/switch",
+            headers={
+                "Authorization": f"Bearer {token}",
+            },
+            json={
+                "name": "feature-switch",
+            },
+        )
+
+        self.assertEqual(
+            switch_response.status_code,
+            200,
+        )
+
+        self.assertTrue(
+            switch_response
+            .get_json()["ok"]
+        )
         
 if __name__ == "__main__":
     unittest.main()

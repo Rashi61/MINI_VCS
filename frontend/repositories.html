@@ -79,6 +79,51 @@
   </select>
 </div>
 
+<h2>Branches</h2>
+<div class="panel">
+  <label for="branchSelect">
+    Available branches
+  </label>
+
+  <select id="branchSelect">
+    <option value="">
+      Select a branch
+    </option>
+  </select>
+
+  <div class="btnrow">
+    <button id="btnSwitchBranch">
+      Switch branch
+    </button>
+  </div>
+
+  <label for="newBranchName">
+    New branch name
+  </label>
+
+  <input
+    id="newBranchName"
+    placeholder="Example: feature-login"
+    maxlength="64"
+  >
+
+  <div class="btnrow">
+    <button
+      id="btnCreateBranch"
+      class="primary"
+    >
+      Create branch
+    </button>
+  </div>
+
+  <p
+    id="branchMessage"
+    class="msg"
+    role="status"
+    hidden
+  ></p>
+</div>
+
 <h3>Upload and commit a file</h3>
 <div class="panel">
   <label for="repositoryId">Selected Repository ID</label>
@@ -175,6 +220,7 @@
   <script src="js/app.js"></script>
   <script src="js/session.js"></script>
   <script src="js/repositories.js"></script>
+  <script src="js/branches.js"></script>
   <script src="js/repository-details.js"></script>
 </body>
 </html>

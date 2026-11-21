@@ -89,6 +89,10 @@ repositorySelect?.addEventListener(
   () => {
     repositoryIdInput.value =
       repositorySelect.value;
+
+    window.dispatchEvent(
+      new Event("repositorySelected")
+    );
   }
 );
 
@@ -186,6 +190,9 @@ async function createRepositoryFromForm() {
       repositoryIdInput.value =
         String(repository.id);
     }
+    window.dispatchEvent(
+    new Event("repositorySelected")
+    );
   } catch (error) {
     showCreateRepositoryMessage(
       error.message,

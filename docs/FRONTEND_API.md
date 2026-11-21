@@ -128,3 +128,53 @@ The current API does not yet provide:
 - GitHub-compatible Git protocol support.
 
 Member 2's merge endpoint will be added only after her merge implementation is compiled and tested separately.
+
+## 15. File upload and staging
+
+### Upload and stage a file
+
+```text
+POST /api/repositories/{repository_id}/files
+```
+
+Content type:
+
+```text
+multipart/form-data
+```
+
+Form fields:
+
+```text
+path: relative repository path, for example docs/readme.txt
+file: uploaded file content
+```
+
+The caller must have the `push` permission.
+
+The server rejects:
+
+- Absolute paths.
+- Parent-directory paths containing `..`.
+- Paths inside `.minivcs`.
+- Requests larger than 10 MB.
+- Files uploaded by unauthenticated users.
+- Files uploaded by users without repository push permission.
+
+## 16. Branch switching
+
+### Switch branch
+
+```text
+POST /api/repositories/{repository_id}/branches/switch
+```
+
+Request:
+
+```json
+{
+  "name": "feature-login"
+}
+```
+
+The caller must have push permission. Branch switching changes the current server-side working tree for this repository. Per-user workspace isolation is required before public multi-user deployment.
