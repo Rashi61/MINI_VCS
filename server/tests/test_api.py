@@ -1,0 +1,314 @@
+import os
+import shutil
+import tempfile
+import unittest
+from pathlib import Path
+import uuid
+
+TEST_ROOT = Path(
+    tempfile.mkdtemp(
+        prefix="minivcs-api-test-"
+    )
+)
+
+TEST_DATABASE = TEST_ROOT / "api-test.db"
+TEST_REPOSITORIES = TEST_ROOT / "repositories"
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+TEST_EXECUTABLE = (
+    PROJECT_ROOT / "build" / "Debug" / "minivcs.exe"
+)
+
+os.environ["MINIVCS_DATABASE_PATH"] = str(
+    TEST_DATABASE
+)
+os.environ["MINIVCS_REPOSITORY_ROOT"] = str(
+    TEST_REPOSITORIES
+)
+os.environ["MINIVCS_EXECUTABLE"] = str(
+    TEST_EXECUTABLE
+)
+
+from server.app.api import create_app
+
+
+class MiniVCSApiTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.app = create_app()
+        cls.app.config["TESTING"] = True
+        cls.client = cls.app.test_client()
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(
+            TEST_ROOT,
+            ignore_errors=True,
+        )
+
+        os.environ.pop(
+            "MINIVCS_DATABASE_PATH",
+            None,
+        )
+        os.environ.pop(
+            "MINIVCS_REPOSITORY_ROOT",
+            None,
+        )
+        os.environ.pop(
+            "MINIVCS_EXECUTABLE",
+            None,
+        )
+
+    def setUp(self):
+        unique_id = uuid.uuid4().hex[:8]
+
+        self.username = (
+            f"api_test_user_{unique_id}"
+        )
+
+        self.email = (
+            f"api_test_user_{unique_id}@example.com"
+        )
+
+        self.password = "TestPassword123"
+
+    def register_and_login(self):
+        register_response = self.client.post(
+            "/api/auth/register",
+            json={
+                "username": self.username,
+                "email": self.email,
+                "password": self.password,
+            },
+        )
+
+        self.assertEqual(
+            register_response.status_code,
+            201,
+        )
+
+        login_response = self.client.post(
+            "/api/auth/login",
+            json={
+                "username": self.username,
+                "password": self.password,
+            },
+        )
+
+        self.assertEqual(
+            login_response.status_code,
+            200,
+        )
+
+        body = login_response.get_json()
+
+        self.assertTrue(body["ok"])
+        self.assertIn("token", body["data"])
+
+        return body["data"]["token"]
+
+    def test_health(self):
+        response = self.client.get(
+            "/api/health"
+        )
+
+        self.assertEqual(
+            response.status_code,
+            200,
+        )
+
+        body = response.get_json()
+
+        self.assertTrue(body["ok"])
+        self.assertEqual(
+            body["data"]["status"],
+            "healthy",
+        )
+        self.assertEqual(
+            body["data"]["database"],
+            "ready",
+        )
+
+    def test_registration_and_login(self):
+        token = self.register_and_login()
+
+        self.assertTrue(
+            isinstance(token, str)
+        )
+        self.assertGreater(
+            len(token),
+            10,
+        )
+
+    def test_repository_creation_requires_login(self):
+        response = self.client.post(
+            "/api/repositories",
+            json={
+                "name": "unauthorized",
+                "visibility": "public",
+            },
+        )
+
+        self.assertEqual(
+            response.status_code,
+            401,
+        )
+
+        body = response.get_json()
+
+        self.assertFalse(body["ok"])
+        self.assertEqual(
+            body["error_code"],
+            "AUTHENTICATION_REQUIRED",
+        )
+
+    def test_create_private_repository(self):
+        token = self.register_and_login()
+
+        response = self.client.post(
+            "/api/repositories",
+            headers={
+                "Authorization": f"Bearer {token}",
+            },
+            json={
+                "name": "private-demo",
+                "visibility": "private",
+            },
+        )
+
+        self.assertEqual(
+            response.status_code,
+            201,
+        )
+
+        body = response.get_json()
+
+        self.assertTrue(body["ok"])
+        self.assertEqual(
+            body["data"]["name"],
+            "private-demo",
+        )
+        self.assertEqual(
+            body["data"]["visibility"],
+            "private",
+        )
+
+        self.assertNotIn(
+            "path",
+            body["data"],
+        )
+
+    def test_public_listing_hides_private_repository(self):
+        token = self.register_and_login()
+
+        create_response = self.client.post(
+            "/api/repositories",
+            headers={
+                "Authorization": f"Bearer {token}",
+            },
+            json={
+                "name": "private-hidden",
+                "visibility": "private",
+            },
+        )
+
+        self.assertEqual(
+            create_response.status_code,
+            201,
+        )
+
+        public_response = self.client.get(
+            "/api/repositories"
+        )
+
+        self.assertEqual(
+            public_response.status_code,
+            200,
+        )
+
+        repositories = (
+            public_response
+            .get_json()["data"]["repositories"]
+        )
+
+        names = {
+            repository["name"]
+            for repository in repositories
+        }
+
+        self.assertNotIn(
+            "private-hidden",
+            names,
+        )
+
+    def test_public_repository_is_listed(self):
+        token = self.register_and_login()
+
+        create_response = self.client.post(
+            "/api/repositories",
+            headers={
+                "Authorization": f"Bearer {token}",
+            },
+            json={
+                "name": "public-demo",
+                "visibility": "public",
+            },
+        )
+
+        self.assertEqual(
+            create_response.status_code,
+            201,
+        )
+
+        public_response = self.client.get(
+            "/api/repositories"
+        )
+
+        repositories = (
+            public_response
+            .get_json()["data"]["repositories"]
+        )
+
+        names = {
+            repository["name"]
+            for repository in repositories
+        }
+
+        self.assertIn(
+            "public-demo",
+            names,
+        )
+
+    def test_logout_invalidates_token(self):
+        token = self.register_and_login()
+
+        logout_response = self.client.post(
+            "/api/auth/logout",
+            headers={
+                "Authorization": f"Bearer {token}",
+            },
+        )
+
+        self.assertEqual(
+            logout_response.status_code,
+            200,
+        )
+
+        create_response = self.client.post(
+            "/api/repositories",
+            headers={
+                "Authorization": f"Bearer {token}",
+            },
+            json={
+                "name": "after-logout",
+                "visibility": "public",
+            },
+        )
+
+        self.assertEqual(
+            create_response.status_code,
+            401,
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()
