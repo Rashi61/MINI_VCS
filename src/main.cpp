@@ -362,7 +362,7 @@ if (command == "auth") {
             std::filesystem::path(argv[3]);
 
         const std::filesystem::path localRemotePath =
-            repository.getMetadataPath() / "remote-cache";
+            repository.getRootPath();
 
         RemoteManager remoteManager(
             localRemotePath.string(),
