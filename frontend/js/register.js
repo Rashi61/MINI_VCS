@@ -1,10 +1,13 @@
-const byId = (id) => document.getElementById(id);
+const registerById = (id) =>
+  document.getElementById(id);
 
-const API_BASE =
-  window.MINIVCS_API_BASE || "http://127.0.0.1:8000";
+function showRegisterMessage(message, ok) {
+  const element =
+    registerById("registerMessage");
 
-function showMessage(message, ok) {
-  const element = byId("registerMessage");
+  if (!element) {
+    return;
+  }
 
   element.textContent = message;
   element.hidden = false;
@@ -13,13 +16,18 @@ function showMessage(message, ok) {
     : "msg err";
 }
 
-async function register() {
-  const username = byId("username").value.trim();
-  const email = byId("email").value.trim();
-  const password = byId("password").value;
+async function registerUser() {
+  const username =
+    registerById("username").value.trim();
+
+  const email =
+    registerById("email").value.trim();
+
+  const password =
+    registerById("password").value;
 
   if (!username || !email || !password) {
-    showMessage(
+    showRegisterMessage(
       "Username, email, and password are required.",
       false
     );
@@ -27,8 +35,8 @@ async function register() {
   }
 
   try {
-    const response = await fetch(
-      `${API_BASE}/api/auth/register`,
+    const registerResponse = await apiRequest(
+      "/api/auth/register",
       {
         method: "POST",
         headers: {
@@ -42,24 +50,20 @@ async function register() {
       }
     );
 
-    const result = await response.json();
-
-    if (!response.ok || !result.ok) {
-      throw new Error(
-        result.message || "Registration failed."
-      );
-    }
-
-    showMessage(
-      "Registration successful. Go to login.",
+    showRegisterMessage(
+      registerResponse.message ||
+        "Registration successful. Go to login.",
       true
     );
   } catch (error) {
-    showMessage(error.message, false);
+    showRegisterMessage(
+      error.message,
+      false
+    );
   }
 }
 
-byId("btnRegister").addEventListener(
+registerById("btnRegister")?.addEventListener(
   "click",
-  register
+  registerUser
 );

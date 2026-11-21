@@ -1,10 +1,13 @@
-const byId = (id) => document.getElementById(id);
+const loginById = (id) =>
+  document.getElementById(id);
 
-const API_BASE =
-  window.MINIVCS_API_BASE || "http://127.0.0.1:8000";
+function showLoginMessage(message, ok) {
+  const element =
+    loginById("loginMessage");
 
-function showMessage(message, ok) {
-  const element = byId("loginMessage");
+  if (!element) {
+    return;
+  }
 
   element.textContent = message;
   element.hidden = false;
@@ -13,12 +16,15 @@ function showMessage(message, ok) {
     : "msg err";
 }
 
-async function login() {
-  const username = byId("username").value.trim();
-  const password = byId("password").value;
+async function loginUser() {
+  const username =
+    loginById("username").value.trim();
+
+  const password =
+    loginById("password").value;
 
   if (!username || !password) {
-    showMessage(
+    showLoginMessage(
       "Username and password are required.",
       false
     );
@@ -26,8 +32,8 @@ async function login() {
   }
 
   try {
-    const response = await fetch(
-      `${API_BASE}/api/auth/login`,
+    const loginResponse = await apiRequest(
+      "/api/auth/login",
       {
         method: "POST",
         headers: {
@@ -40,25 +46,17 @@ async function login() {
       }
     );
 
-    const result = await response.json();
-
-    if (!response.ok || !result.ok) {
-      throw new Error(
-        result.message || "Login failed."
-      );
-    }
-
     localStorage.setItem(
       "minivcs_session_token",
-      result.data.token
+      loginResponse.data.token
     );
 
     localStorage.setItem(
       "minivcs_username",
-      result.data.username
+      loginResponse.data.username
     );
 
-    showMessage(
+    showLoginMessage(
       "Login successful. Opening repositories...",
       true
     );
@@ -68,20 +66,23 @@ async function login() {
         "repositories.html";
     }, 500);
   } catch (error) {
-    showMessage(error.message, false);
+    showLoginMessage(
+      error.message,
+      false
+    );
   }
 }
 
-byId("btnLogin").addEventListener(
+loginById("btnLogin")?.addEventListener(
   "click",
-  login
+  loginUser
 );
 
-byId("password").addEventListener(
+loginById("password")?.addEventListener(
   "keydown",
   (event) => {
     if (event.key === "Enter") {
-      login();
+      loginUser();
     }
   }
 );
