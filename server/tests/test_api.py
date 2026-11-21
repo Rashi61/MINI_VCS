@@ -4,6 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 import uuid
+import io
 
 TEST_ROOT = Path(
     tempfile.mkdtemp(
@@ -524,9 +525,122 @@ class MiniVCSApiTests(unittest.TestCase):
             body["error_code"],
             "VALIDATION_ERROR",
         )
+    def test_upload_file_requires_login(self):
+        response = self.client.post(
+            "/api/repositories/1/files",
+            data={
+                "path": "README.md",
+                "file": (
+                    io.BytesIO(b"unauthorized"),
+                    "README.md",
+                ),
+            },
+            content_type="multipart/form-data",
+        )
 
+        self.assertEqual(
+            response.status_code,
+            401,
+        )
+
+    def test_upload_file_and_stage(self):
+        token = self.register_and_login()
+
+        create_response = self.client.post(
+            "/api/repositories",
+            headers={
+                "Authorization": f"Bearer {token}",
+            },
+            json={
+                "name": "upload-demo",
+                "visibility": "private",
+            },
+        )
+
+        self.assertEqual(
+            create_response.status_code,
+            201,
+        )
+
+        repository_id = (
+            create_response
+            .get_json()["data"]["id"]
+        )
+
+        upload_response = self.client.post(
+            f"/api/repositories/{repository_id}/files",
+            headers={
+                "Authorization": f"Bearer {token}",
+            },
+            data={
+                "path": "docs/readme.txt",
+                "file": (
+                    io.BytesIO(b"MiniVCS upload test"),
+                    "readme.txt",
+                ),
+            },
+            content_type="multipart/form-data",
+        )
+
+        self.assertEqual(
+            upload_response.status_code,
+            201,
+        )
+
+        body = upload_response.get_json()
+
+        self.assertTrue(body["ok"])
+        self.assertEqual(
+            body["data"]["path"],
+            "docs/readme.txt",
+        )
+
+    def test_upload_rejects_parent_path(self):
+        token = self.register_and_login()
+
+        create_response = self.client.post(
+            "/api/repositories",
+            headers={
+                "Authorization": f"Bearer {token}",
+            },
+            json={
+                "name": "upload-safety-demo",
+                "visibility": "private",
+            },
+        )
+
+        repository_id = (
+            create_response
+            .get_json()["data"]["id"]
+        )
+
+        upload_response = self.client.post(
+            f"/api/repositories/{repository_id}/files",
+            headers={
+                "Authorization": f"Bearer {token}",
+            },
+            data={
+                "path": "../outside.txt",
+                "file": (
+                    io.BytesIO(b"must be rejected"),
+                    "outside.txt",
+                ),
+            },
+            content_type="multipart/form-data",
+        )
+
+        self.assertEqual(
+            upload_response.status_code,
+            400,
+        )
+
+        body = upload_response.get_json()
+
+        self.assertFalse(body["ok"])
+        self.assertEqual(
+            body["error_code"],
+            "FILE_UPLOAD_ERROR",
+        )
         
-
-
 if __name__ == "__main__":
     unittest.main()

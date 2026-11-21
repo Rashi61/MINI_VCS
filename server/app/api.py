@@ -22,6 +22,7 @@ from .repository_service import (
     user_can_view_repository,
     run_repository_write_command,
     user_can_view_repository,
+    save_and_stage_file,
 )
 
 
@@ -84,7 +85,7 @@ def require_login(handler):
 
 def create_app() -> Flask:
     app = Flask(__name__)
-
+    app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024
     settings = load_settings()
 
     app.config["MINIVCS_SETTINGS"] = settings
@@ -540,6 +541,68 @@ def create_app() -> Flask:
             return failure(
                 message_text,
                 "COMMIT_ERROR",
+                status,
+            )
+    @app.post(
+        "/api/repositories/<int:repository_id>/files"
+    )
+    @require_login
+    def upload_repository_file(user_id, repository_id):
+        relative_path = request.form.get(
+            "path",
+            "",
+        )
+
+        uploaded_file = request.files.get(
+            "file"
+        )
+
+        if uploaded_file is None:
+            return failure(
+                "A multipart file field named 'file' is required.",
+                "FILE_REQUIRED",
+                400,
+            )
+
+        if not uploaded_file.filename:
+            return failure(
+                "The uploaded file must have a filename.",
+                "FILENAME_REQUIRED",
+                400,
+            )
+
+        try:
+            result = save_and_stage_file(
+                settings,
+                repository_id,
+                user_id,
+                relative_path,
+                uploaded_file,
+            )
+
+            return success(
+                "File uploaded and staged successfully.",
+                {
+                    "repository": result["repository"],
+                    "path": result["path"],
+                    "output": result["output"],
+                },
+                201,
+            )
+
+        except RepositoryServiceError as error:
+            message = str(error)
+
+            if "permission" in message.lower():
+                status = 403
+            elif "not found" in message.lower():
+                status = 404
+            else:
+                status = 400
+
+            return failure(
+                message,
+                "FILE_UPLOAD_ERROR",
                 status,
             )
         

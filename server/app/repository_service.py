@@ -553,3 +553,142 @@ def run_repository_write_command(
         "command": arguments[0],
         "output": output,
     }
+def validate_repository_file_path(
+    relative_path: str,
+) -> Path:
+    if not isinstance(relative_path, str):
+        raise RepositoryServiceError(
+            "File path must be a string."
+        )
+
+    cleaned = relative_path.strip()
+
+    if not cleaned:
+        raise RepositoryServiceError(
+            "File path is required."
+        )
+
+    candidate = Path(cleaned)
+
+    if candidate.is_absolute():
+        raise RepositoryServiceError(
+            "Absolute file paths are not allowed."
+        )
+
+    if any(
+        part in {"..", ""}
+        for part in candidate.parts
+    ):
+        raise RepositoryServiceError(
+            "Parent-directory paths are not allowed."
+        )
+
+    if ".minivcs" in candidate.parts:
+        raise RepositoryServiceError(
+            "The .minivcs directory cannot be modified through the API."
+        )
+
+    if len(cleaned) > 255:
+        raise RepositoryServiceError(
+            "File path is too long."
+        )
+
+    return candidate
+
+
+def save_and_stage_file(
+    settings: ServerSettings,
+    repository_id: int,
+    user_id: int | None,
+    relative_path: str,
+    uploaded_file,
+) -> dict:
+    repository = get_repository(
+        settings,
+        repository_id,
+    )
+
+    if repository is None:
+        raise RepositoryServiceError(
+            "Repository was not found."
+        )
+
+    if not user_can_perform(
+        settings,
+        repository,
+        user_id,
+        "push",
+    ):
+        raise RepositoryServiceError(
+            "You do not have permission to upload files."
+        )
+
+    if uploaded_file is None:
+        raise RepositoryServiceError(
+            "A file is required."
+        )
+
+    safe_relative_path = validate_repository_file_path(
+        relative_path
+    )
+
+    repository_root = repository_path(
+        settings,
+        repository_id,
+    )
+
+    target = (
+        repository_root / safe_relative_path
+    ).resolve()
+
+    root = repository_root.resolve()
+
+    try:
+        target.relative_to(root)
+    except ValueError as error:
+        raise RepositoryServiceError(
+            "File path escapes the repository."
+        ) from error
+
+    target.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    uploaded_file.save(target)
+
+    executable = settings.minivcs_executable
+
+    if not executable.is_file():
+        raise RepositoryServiceError(
+            "MiniVCS executable was not found."
+        )
+
+    completed = subprocess.run(
+        [
+            str(executable),
+            "add",
+            safe_relative_path.as_posix(),
+        ],
+        cwd=str(repository_root),
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+
+    output = completed.stdout.strip()
+    error_output = completed.stderr.strip()
+
+    if completed.returncode != 0:
+        raise RepositoryServiceError(
+            error_output
+            or output
+            or "File was saved but could not be staged."
+        )
+
+    return {
+        "repository": repository,
+        "path": safe_relative_path.as_posix(),
+        "output": output,
+    }
