@@ -64,6 +64,12 @@ function renderRepositories(repositories) {
         repositoryName(repository)
       )}</h3>
       <p>
+        ${escapeHtml(
+            repository.description?.trim() ||
+            "No description provided."
+        )}
+      </p>
+      <p>
         Owner:
         ${escapeHtml(
           repositoryOwner(repository)
@@ -182,8 +188,8 @@ async function loadRepositoryDetails(id) {
     document.getElementById(
       "publicRepositoryDescription"
     ).textContent =
-      repository.description ||
-      "No description provided.";
+      repository.description?.trim() ||
+      "This repository has no description."
 
     detailsElement.hidden = false;
     detailsElement.scrollIntoView({

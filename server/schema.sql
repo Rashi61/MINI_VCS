@@ -1,7 +1,6 @@
 
 PRAGMA foreign_keys = ON;
 
--- Table for storing user accounts
 CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     username TEXT NOT NULL UNIQUE,
@@ -11,10 +10,10 @@ CREATE TABLE IF NOT EXISTS users (
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
--- Table for storing repository details
 CREATE TABLE IF NOT EXISTS repositories (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
     owner_id INTEGER NOT NULL,
     visibility TEXT NOT NULL DEFAULT 'private'
         CHECK (visibility IN ('private', 'public')),
@@ -23,7 +22,6 @@ CREATE TABLE IF NOT EXISTS repositories (
         ON DELETE CASCADE
 );
 
--- Table for storing repository members and their roles
 CREATE TABLE IF NOT EXISTS repository_members (
     repository_id INTEGER NOT NULL,
     user_id INTEGER NOT NULL,
@@ -37,7 +35,6 @@ CREATE TABLE IF NOT EXISTS repository_members (
         ON DELETE CASCADE
 );
 
--- Table for storing login sessions
 CREATE TABLE IF NOT EXISTS sessions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
@@ -49,7 +46,6 @@ CREATE TABLE IF NOT EXISTS sessions (
         ON DELETE CASCADE
 );
 
--- Table for storing repository branch references
 CREATE TABLE IF NOT EXISTS branch_refs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     repository_id INTEGER NOT NULL,
@@ -61,7 +57,7 @@ CREATE TABLE IF NOT EXISTS branch_refs (
         ON DELETE CASCADE
 );
 
--- Indexes for faster database searching
+
 CREATE INDEX IF NOT EXISTS idx_sessions_user
 ON sessions(user_id);
 

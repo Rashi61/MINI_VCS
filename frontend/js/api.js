@@ -1,49 +1,136 @@
-const MINIVCS_API_BASE =
-  window.MINIVCS_API_BASE ||
-  "http://127.0.0.1:8000";
+"use strict";
+
+const API_BASE_URL = "http://127.0.0.1:8000";
+
+const SESSION_TOKEN_KEY =
+  "minivcs_session_token";
 
 function getSessionToken() {
   return localStorage.getItem(
-    "minivcs_session_token"
+    SESSION_TOKEN_KEY
   );
 }
 
-function getAuthHeaders() {
-  const token = getSessionToken();
+function saveSessionToken(token) {
+  localStorage.setItem(
+    SESSION_TOKEN_KEY,
+    token
+  );
+}
 
-  return token
-    ? {
-        Authorization: `Bearer ${token}`,
-      }
-    : {};
+function removeSessionToken() {
+  localStorage.removeItem(
+    SESSION_TOKEN_KEY
+  );
 }
 
 async function apiRequest(
   path,
   options = {}
 ) {
+  const token =
+    getSessionToken();
+
   const headers = {
-    ...getAuthHeaders(),
-    ...(options.headers || {}),
+    ...(options.headers || {})
   };
 
-  const response = await fetch(
-    `${MINIVCS_API_BASE}${path}`,
-    {
-      ...options,
-      headers,
-    }
-  );
+  const isFormData =
+    options.body instanceof FormData;
 
-  const responseBody =
-    await response.json();
+  if (
+    options.body &&
+    !isFormData &&
+    !headers["Content-Type"]
+  ) {
+    headers["Content-Type"] =
+      "application/json";
+  }
 
-  if (!response.ok || !responseBody.ok) {
+  if (token) {
+    headers["Authorization"] =
+      `Bearer ${token}`;
+  }
+
+  const requestUrl =
+    `${API_BASE_URL}${path}`;
+
+  let response;
+
+  try {
+    response = await fetch(
+      requestUrl,
+      {
+        ...options,
+        headers
+      }
+    );
+  } catch (error) {
     throw new Error(
-      responseBody.message ||
-        "API request failed."
+      "Could not connect to the Flask API. " +
+      "Make sure Flask is running at " +
+      `${API_BASE_URL}.`
     );
   }
 
-  return responseBody;
+  const contentType =
+    response.headers.get(
+      "content-type"
+    ) || "";
+
+  const responseText =
+    await response.text();
+
+  let result = {};
+
+  if (responseText.trim()) {
+    if (
+      !contentType.includes(
+        "application/json"
+      )
+    ) {
+      throw new Error(
+        "The server returned HTML instead of JSON. " +
+        `Request URL: ${requestUrl}. ` +
+        "Check that the request is sent to Flask " +
+        "on port 8000, not the frontend server on port 5500."
+      );
+    }
+
+    try {
+      result =
+        JSON.parse(responseText);
+    } catch (error) {
+      throw new Error(
+        "The Flask API returned invalid JSON. " +
+        `HTTP status: ${response.status}.`
+      );
+    }
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      result.message ||
+      result.error ||
+      result.data?.message ||
+      `Request failed with HTTP ${response.status}.`
+    );
+  }
+
+  return result;
 }
+
+window.API_BASE_URL =
+  API_BASE_URL;
+
+window.apiRequest =
+  apiRequest;
+
+window.getSessionToken =
+  getSessionToken;
+
+window.saveSessionToken =
+  saveSessionToken;
+
+window.removeSessionToken =
+  removeSessionToken;

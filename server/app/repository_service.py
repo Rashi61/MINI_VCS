@@ -108,15 +108,22 @@ def _initialize_minivcs_repository(
             f"STDERR: {stderr or '<empty>'}."
         )
 
-
 def create_repository(
     settings: ServerSettings,
     owner_id: int,
     name: str,
     visibility: str,
+    description="",
 ) -> dict:
     repository_name = validate_repository_name(name)
     repository_visibility = validate_visibility(visibility)
+
+    description = str(description or "").strip()
+
+    if len(description) > 500:
+        raise RepositoryServiceError(
+            "Repository description must be 500 characters or fewer."
+        )
 
     if not isinstance(owner_id, int) or owner_id <= 0:
         raise RepositoryServiceError(
@@ -160,15 +167,17 @@ def create_repository(
         cursor = connection.execute(
             """
             INSERT INTO repositories
-                (name, owner_id, visibility)
-            VALUES (?, ?, ?)
+                (name, description, owner_id, visibility)
+            VALUES (?, ?, ?,?)
             """,
             (
                 repository_name,
+                description,
                 owner_id,
                 repository_visibility,
             ),
         )
+        connection.commit()
 
         repository_id = int(cursor.lastrowid)
         storage_path = repository_path(
@@ -225,10 +234,11 @@ def list_repositories(
         SELECT
             repositories.id,
             repositories.name,
+            repositories.description,
             repositories.owner_id,
+            users.username AS owner_username,
             repositories.visibility,
-            repositories.created_at,
-            users.username AS owner_username
+            repositories.created_at
         FROM repositories
         JOIN users
             ON users.id = repositories.owner_id
@@ -277,6 +287,7 @@ def list_repositories(
             {
                 "id": row["id"],
                 "name": row["name"],
+                "description": row["description"] or "",
                 "owner_id": row["owner_id"],
                 "owner_username": row["owner_username"],
                 "visibility": row["visibility"],
@@ -305,6 +316,7 @@ def get_repository(
             SELECT
                 repositories.id,
                 repositories.name,
+                repositories.description,
                 repositories.owner_id,
                 repositories.visibility,
                 repositories.created_at,
@@ -323,6 +335,7 @@ def get_repository(
         return {
             "id": row["id"],
             "name": row["name"],
+            "description": row["description"] or "",
             "owner_id": row["owner_id"],
             "owner_username": row["owner_username"],
             "visibility": row["visibility"],
