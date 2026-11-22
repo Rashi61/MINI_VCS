@@ -5,7 +5,10 @@
 #include <optional>
 #include <string>
 #include <unordered_set>
+#include<unordered_map>
 #include <vector>
+#include "Commit.h"
+
 
 struct MergeResult {
     bool success = false;
@@ -26,6 +29,13 @@ private:
     std::optional<std::string> findCommonAncestor(
         const std::string& ours,
         const std::string& theirs
+    ) const;
+        bool buildThreeWayMerge(
+        const Commit& base,
+        const Commit& ours,
+        const Commit& theirs,
+        std::unordered_map<std::string, std::string>& mergedHashes,
+        std::vector<std::string>& conflicts
     ) const;
 
 public:
