@@ -15,17 +15,20 @@ from .database import (
 )
 from .repository_service import (
     RepositoryServiceError,
+    add_repository_member,
     create_repository,
     get_repository,
+    list_public_repository_files,
+    list_repository_members,
     list_repositories,
+    read_public_repository_file,
+    remove_repository_member,
     run_remote_operation,
     run_repository_command,
-    user_can_view_repository,
     run_repository_write_command,
-    user_can_view_repository,
     save_and_stage_file,
-    list_public_repository_files,
-    read_public_repository_file,
+    update_repository_member,
+    user_can_view_repository,
 )
 from flask_cors import CORS
 
@@ -126,7 +129,11 @@ def create_app() -> Flask:
         origins=[settings.frontend_origin],
         supports_credentials=False,
         allow_headers=["Content-Type", "Authorization"],
-        methods=["GET", "POST", "OPTIONS"],
+        methods=["GET",
+                "POST",
+                "PATCH",
+                "DELETE",
+                "OPTIONS",],
     )
 
     app.config["MINIVCS_SETTINGS"] = settings
@@ -968,6 +975,148 @@ def create_app() -> Flask:
             return failure(
                 str(error),
                 "FILE_READ_ERROR",
+                repository_error_status(error),
+            )
+    @app.get(
+        "/api/repositories/<int:repository_id>/members"
+    )
+    @require_login
+    def repository_members(
+        user_id,
+        repository_id,
+    ):
+        try:
+            result = list_repository_members(
+                settings,
+                repository_id,
+                user_id,
+            )
+
+            return success(
+                "Repository members loaded.",
+                result,
+            )
+
+        except RepositoryServiceError as error:
+            return failure(
+                str(error),
+                "MEMBER_LIST_ERROR",
+                repository_error_status(error),
+            )
+
+    @app.post(
+        "/api/repositories/<int:repository_id>/members"
+    )
+    @require_login
+    def add_member(
+        user_id,
+        repository_id,
+    ):
+        payload = (
+            request.get_json(
+                silent=True
+            )
+            or {}
+        )
+
+        try:
+            member = add_repository_member(
+                settings=settings,
+                repository_id=repository_id,
+                requester_id=user_id,
+                username=payload.get(
+                    "username",
+                    "",
+                ),
+                role=payload.get(
+                    "role",
+                    "viewer",
+                ),
+            )
+
+            return success(
+                "Repository member added.",
+                {
+                    "member": member,
+                },
+                201,
+            )
+
+        except RepositoryServiceError as error:
+            return failure(
+                str(error),
+                "MEMBER_ADD_ERROR",
+                repository_error_status(error),
+            )
+
+    @app.patch(
+        "/api/repositories/<int:repository_id>/members/<int:member_user_id>"
+    )
+    @require_login
+    def update_member(
+        user_id,
+        repository_id,
+        member_user_id,
+    ):
+        payload = (
+            request.get_json(
+                silent=True
+            )
+            or {}
+        )
+
+        try:
+            member = update_repository_member(
+                settings=settings,
+                repository_id=repository_id,
+                requester_id=user_id,
+                member_user_id=member_user_id,
+                role=payload.get(
+                    "role",
+                    "",
+                ),
+            )
+
+            return success(
+                "Repository member role updated.",
+                {
+                    "member": member,
+                },
+            )
+
+        except RepositoryServiceError as error:
+            return failure(
+                str(error),
+                "MEMBER_UPDATE_ERROR",
+                repository_error_status(error),
+            )
+
+    @app.delete(
+        "/api/repositories/<int:repository_id>/members/<int:member_user_id>"
+    )
+    @require_login
+    def remove_member(
+        user_id,
+        repository_id,
+        member_user_id,
+    ):
+        try:
+            result = remove_repository_member(
+                settings=settings,
+                repository_id=repository_id,
+                requester_id=user_id,
+                member_user_id=member_user_id,
+            )
+
+            return success(
+                "Repository member removed.",
+                result,
+            )
+
+        except RepositoryServiceError as error:
+            return failure(
+                str(error),
+                "MEMBER_REMOVE_ERROR",
                 repository_error_status(error),
             )
    

@@ -1019,3 +1019,427 @@ def read_public_repository_file(
         "size": file_size,
         "content": content,
     }
+MEMBER_ROLES = {
+    "maintainer",
+    "contributor",
+    "viewer",
+}
+
+
+def _member_management_context(
+    settings,
+    repository_id,
+    requester_id,
+):
+    repository = get_repository(
+        settings,
+        repository_id,
+    )
+
+    if repository is None:
+        raise RepositoryServiceError(
+            "Repository was not found."
+        )
+
+    if requester_id is None:
+        raise RepositoryServiceError(
+            "Login is required."
+        )
+
+    requester_role = get_repository_role(
+        requester_id,
+        repository_id,
+    )
+
+    if requester_role not in {
+        "owner",
+        "maintainer",
+    }:
+        raise RepositoryServiceError(
+            "You do not have permission to manage members."
+        )
+
+    return repository, requester_role
+
+
+def _validate_member_role(role):
+    if not isinstance(role, str):
+        raise RepositoryServiceError(
+            "Member role must be text."
+        )
+
+    role = role.strip().lower()
+
+    if role not in MEMBER_ROLES:
+        raise RepositoryServiceError(
+            "Member role must be maintainer, contributor, or viewer."
+        )
+
+    return role
+
+
+def _member_to_dict(row):
+    return {
+        "user_id": row["user_id"],
+        "username": row["username"],
+        "email": row["email"],
+        "role": row["role"],
+        "joined_at": row["joined_at"],
+    }
+
+
+def list_repository_members(
+    settings,
+    repository_id,
+    requester_id,
+):
+    repository, requester_role = (
+        _member_management_context(
+            settings,
+            repository_id,
+            requester_id,
+        )
+    )
+
+    connection = get_connection(
+        settings.database_path
+    )
+
+    try:
+        rows = connection.execute(
+            """
+            SELECT
+                users.id AS user_id,
+                users.username,
+                users.email,
+                CASE
+                    WHEN users.id = repositories.owner_id
+                    THEN 'owner'
+                    ELSE repository_members.role
+                END AS role,
+                repository_members.joined_at
+            FROM repositories
+            JOIN users
+                ON users.id = repositories.owner_id
+            LEFT JOIN repository_members
+                ON repository_members.repository_id =
+                   repositories.id
+               AND repository_members.user_id =
+                   users.id
+            WHERE repositories.id = ?
+
+            UNION ALL
+
+            SELECT
+                users.id AS user_id,
+                users.username,
+                users.email,
+                repository_members.role,
+                repository_members.joined_at
+            FROM repository_members
+            JOIN users
+                ON users.id = repository_members.user_id
+            JOIN repositories
+                ON repositories.id =
+                   repository_members.repository_id
+            WHERE repository_members.repository_id = ?
+              AND repository_members.user_id != repositories.owner_id
+
+            ORDER BY role, username
+            """,
+            (
+                repository_id,
+                repository_id,
+            ),
+        ).fetchall()
+
+        return {
+            "repository": repository,
+            "members": [
+                _member_to_dict(row)
+                for row in rows
+            ],
+        }
+
+    finally:
+        connection.close()
+
+
+def add_repository_member(
+    settings,
+    repository_id,
+    requester_id,
+    username,
+    role,
+):
+    repository, requester_role = (
+        _member_management_context(
+            settings,
+            repository_id,
+            requester_id,
+        )
+    )
+
+    if not isinstance(username, str):
+        raise RepositoryServiceError(
+            "Username must be text."
+        )
+
+    username = username.strip()
+
+    if not username:
+        raise RepositoryServiceError(
+            "Username is required."
+        )
+
+    role = _validate_member_role(role)
+
+    if (
+        requester_role == "maintainer"
+        and role not in {
+            "contributor",
+            "viewer",
+        }
+    ):
+        raise RepositoryServiceError(
+            "Maintainers can add only contributors or viewers."
+        )
+
+    connection = get_connection(
+        settings.database_path
+    )
+
+    try:
+        user = connection.execute(
+            """
+            SELECT id, username, email
+            FROM users
+            WHERE username = ?
+            """,
+            (username,),
+        ).fetchone()
+
+        if user is None:
+            raise RepositoryServiceError(
+                "User was not found."
+            )
+
+        if user["id"] == repository["owner_id"]:
+            raise RepositoryServiceError(
+                "The repository owner is already a member."
+            )
+
+        existing = connection.execute(
+            """
+            SELECT 1
+            FROM repository_members
+            WHERE repository_id = ?
+              AND user_id = ?
+            """,
+            (
+                repository_id,
+                user["id"],
+            ),
+        ).fetchone()
+
+        if existing is not None:
+            raise RepositoryServiceError(
+                "This user is already a repository member."
+            )
+
+        connection.execute(
+            """
+            INSERT INTO repository_members (
+                repository_id,
+                user_id,
+                role
+            )
+            VALUES (?, ?, ?)
+            """,
+            (
+                repository_id,
+                user["id"],
+                role,
+            ),
+        )
+
+        connection.commit()
+
+        return {
+            "user_id": user["id"],
+            "username": user["username"],
+            "email": user["email"],
+            "role": role,
+        }
+
+    finally:
+        connection.close()
+
+
+def update_repository_member(
+    settings,
+    repository_id,
+    requester_id,
+    member_user_id,
+    role,
+):
+    repository, requester_role = (
+        _member_management_context(
+            settings,
+            repository_id,
+            requester_id,
+        )
+    )
+
+    if not isinstance(member_user_id, int):
+        raise RepositoryServiceError(
+            "Member user ID must be an integer."
+        )
+
+    role = _validate_member_role(role)
+
+    if member_user_id == repository["owner_id"]:
+        raise RepositoryServiceError(
+            "The repository owner role cannot be changed."
+        )
+
+    if (
+        requester_role == "maintainer"
+        and role not in {
+            "contributor",
+            "viewer",
+        }
+    ):
+        raise RepositoryServiceError(
+            "Maintainers can assign only contributors or viewers."
+        )
+
+    connection = get_connection(
+        settings.database_path
+    )
+
+    try:
+        member = connection.execute(
+            """
+            SELECT
+                users.id AS user_id,
+                users.username,
+                users.email,
+                repository_members.role,
+                repository_members.joined_at
+            FROM repository_members
+            JOIN users
+                ON users.id = repository_members.user_id
+            WHERE repository_members.repository_id = ?
+              AND repository_members.user_id = ?
+            """,
+            (
+                repository_id,
+                member_user_id,
+            ),
+        ).fetchone()
+
+        if member is None:
+            raise RepositoryServiceError(
+                "Repository member was not found."
+            )
+
+        connection.execute(
+            """
+            UPDATE repository_members
+            SET role = ?
+            WHERE repository_id = ?
+              AND user_id = ?
+            """,
+            (
+                role,
+                repository_id,
+                member_user_id,
+            ),
+        )
+
+        connection.commit()
+
+        return {
+            "user_id": member["user_id"],
+            "username": member["username"],
+            "email": member["email"],
+            "role": role,
+            "joined_at": member["joined_at"],
+        }
+
+    finally:
+        connection.close()
+
+
+def remove_repository_member(
+    settings,
+    repository_id,
+    requester_id,
+    member_user_id,
+):
+    repository, requester_role = (
+        _member_management_context(
+            settings,
+            repository_id,
+            requester_id,
+        )
+    )
+
+    if not isinstance(member_user_id, int):
+        raise RepositoryServiceError(
+            "Member user ID must be an integer."
+        )
+
+    if member_user_id == repository["owner_id"]:
+        raise RepositoryServiceError(
+            "The repository owner cannot be removed."
+        )
+
+    connection = get_connection(
+        settings.database_path
+    )
+
+    try:
+        member = connection.execute(
+            """
+            SELECT users.username
+            FROM repository_members
+            JOIN users
+                ON users.id = repository_members.user_id
+            WHERE repository_members.repository_id = ?
+              AND repository_members.user_id = ?
+            """,
+            (
+                repository_id,
+                member_user_id,
+            ),
+        ).fetchone()
+
+        if member is None:
+            raise RepositoryServiceError(
+                "Repository member was not found."
+            )
+
+        connection.execute(
+            """
+            DELETE FROM repository_members
+            WHERE repository_id = ?
+              AND user_id = ?
+            """,
+            (
+                repository_id,
+                member_user_id,
+            ),
+        )
+
+        connection.commit()
+
+        return {
+            "user_id": member_user_id,
+            "username": member["username"],
+            "removed": True,
+        }
+
+    finally:
+        connection.close()

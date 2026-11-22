@@ -378,3 +378,53 @@ button {
   border-radius: 6px;
   color: #57606a;
 }
+.collaborator-form {
+  display: grid;
+  grid-template-columns:
+    minmax(180px, 1fr)
+    minmax(140px, 180px)
+    auto;
+  align-items: end;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.collaborator-form label {
+  display: none;
+}
+
+.collaborator-form input,
+.collaborator-form select {
+  box-sizing: border-box;
+  min-height: 38px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  font: inherit;
+}
+
+.collaborator-row {
+  display: grid;
+  grid-template-columns:
+    minmax(180px, 1fr)
+    150px
+    auto
+    auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid #d8dee4;
+}
+
+.collaborator-identity {
+  overflow-wrap: anywhere;
+  font-weight: 600;
+}
+
+@media (max-width: 700px) {
+  .collaborator-form,
+  .collaborator-row {
+    grid-template-columns: 1fr;
+  }
+}

@@ -401,6 +401,53 @@
         hidden
       ></p>
     </div>
+    <h2>Collaborators</h2>
+    <div class="panel">
+      <p>
+        Owners and maintainers can manage repository members.
+      </p>
+
+      <div class="collaborator-form">
+        <label for="collaboratorUsername">
+          Username
+        </label>
+
+        <input
+          id="collaboratorUsername"
+          type="text"
+          placeholder="Enter an existing MiniVCS username"
+        >
+
+        <label for="collaboratorRole">
+          Role
+        </label>
+
+        <select id="collaboratorRole">
+          <option value="viewer">Viewer</option>
+          <option value="contributor">Contributor</option>
+          <option value="maintainer">Maintainer</option>
+        </select>
+
+        <button
+          id="btnAddCollaborator"
+          type="button"
+          class="primary"
+        >
+          Add collaborator
+        </button>
+      </div>
+
+      <p
+        id="collaboratorMessage"
+        class="msg"
+        role="status"
+        hidden
+      ></p>
+
+      <div id="collaboratorList">
+        Select a repository to view collaborators.
+      </div>
+    </div>
   </main>
 
   <script src="js/api.js"></script>
@@ -410,5 +457,6 @@
   <script src="js/branches.js"></script>
   <script src="js/session.js"></script>
   <script src="js/remote.js"></script>
+  <script src="js/collaborators.js?v=1"></script>
 </body>
 </html>
