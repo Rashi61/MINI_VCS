@@ -263,3 +263,18 @@ button {
   background: #eaeef2;
   color: #24292f;
 }
+.public-repository-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 18px 0;
+}
+
+.public-repository-actions button {
+  cursor: pointer;
+}
+
+.public-repository-actions button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}

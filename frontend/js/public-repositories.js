@@ -1,5 +1,10 @@
+"use strict";
+
 const API_BASE =
   "http://127.0.0.1:8000";
+
+let selectedPublicRepositoryId =
+  null;
 
 const messageElement =
   document.getElementById(
@@ -16,33 +21,177 @@ const detailsElement =
     "publicRepositoryDetails"
   );
 
-function showMessage(message, isError = false) {
-  messageElement.textContent = message;
-  messageElement.className = isError
-    ? "msg err"
-    : "msg";
+const detailsMessageElement =
+  document.getElementById(
+    "publicRepositoryDetailsMessage"
+  );
+
+const branchesElement =
+  document.getElementById(
+    "publicRepositoryBranches"
+  );
+
+const historyElement =
+  document.getElementById(
+    "publicRepositoryHistory"
+  );
+
+const statusElement =
+  document.getElementById(
+    "publicRepositoryStatus"
+  );
+
+function showMessage(
+  message,
+  isError = false
+) {
+  if (!messageElement) {
+    return;
+  }
+
+  messageElement.textContent =
+    message;
+
+  messageElement.hidden =
+    false;
+
+  messageElement.className =
+    isError
+      ? "msg err"
+      : "msg";
+}
+
+function showDetailsMessage(
+  message,
+  isError = false
+) {
+  if (!detailsMessageElement) {
+    return;
+  }
+
+  detailsMessageElement.textContent =
+    message;
+
+  detailsMessageElement.hidden =
+    false;
+
+  detailsMessageElement.className =
+    isError
+      ? "msg err"
+      : "msg ok";
 }
 
 function repositoryId(repository) {
-  return repository.id ??
-    repository.repository_id;
+  return (
+    repository.id ??
+    repository.repository_id
+  );
 }
 
 function repositoryName(repository) {
-  return repository.name ??
+  return (
+    repository.name ??
     repository.repository_name ??
-    "Unnamed repository";
+    "Unnamed repository"
+  );
 }
 
 function repositoryOwner(repository) {
-  return repository.owner_username ??
+  return (
+    repository.owner_username ??
     repository.owner ??
     repository.username ??
-    "Unknown owner";
+    "Unknown owner"
+  );
 }
 
-function renderRepositories(repositories) {
-  listElement.innerHTML = "";
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+async function readApiResponse(response) {
+  const contentType =
+    response.headers.get(
+      "content-type"
+    ) || "";
+
+  const text =
+    await response.text();
+
+  if (
+    !contentType.includes(
+      "application/json"
+    )
+  ) {
+    throw new Error(
+      "The API returned a non-JSON response " +
+      `(${response.status}).`
+    );
+  }
+
+  let body;
+
+  try {
+    body = JSON.parse(text);
+  } catch {
+    throw new Error(
+      "The API returned invalid JSON " +
+      `(${response.status}).`
+    );
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      body.message ||
+      body.error ||
+      body.error_code ||
+      `API request failed (${response.status}).`
+    );
+  }
+
+  return body;
+}
+
+function extractRepositories(body) {
+  if (
+    Array.isArray(
+      body.data?.repositories
+    )
+  ) {
+    return body.data.repositories;
+  }
+
+  if (
+    Array.isArray(body.data)
+  ) {
+    return body.data;
+  }
+
+  if (
+    Array.isArray(
+      body.repositories
+    )
+  ) {
+    return body.repositories;
+  }
+
+  return [];
+}
+
+function renderRepositories(
+  repositories
+) {
+  if (!listElement) {
+    return;
+  }
+
+  listElement.innerHTML =
+    "";
 
   if (!repositories.length) {
     showMessage(
@@ -54,44 +203,78 @@ function renderRepositories(repositories) {
   showMessage("");
 
   for (const repository of repositories) {
-    const id = repositoryId(repository);
-    const card = document.createElement("article");
+    const id =
+      repositoryId(repository);
 
-    card.className = "repository-card";
-
-    card.innerHTML = `
-      <h3>${escapeHtml(
-        repositoryName(repository)
-      )}</h3>
-      <p>
-        ${escapeHtml(
-            repository.description?.trim() ||
-            "No description provided."
-        )}
-      </p>
-      <p>
-        Owner:
-        ${escapeHtml(
-          repositoryOwner(repository)
-        )}
-      </p>
-      <p>
-        Visibility:
-        ${escapeHtml(
-          repository.visibility ?? "public"
-        )}
-      </p>
-      <button type="button">
-        View details
-      </button>
-    `;
-
-    card
-      .querySelector("button")
-      .addEventListener(
-        "click",
-        () => loadRepositoryDetails(id)
+    const card =
+      document.createElement(
+        "article"
       );
+
+    card.className =
+      "repository-card";
+
+    const name =
+      document.createElement(
+        "h3"
+      );
+
+    name.textContent =
+      repositoryName(repository);
+
+    const description =
+      document.createElement(
+        "p"
+      );
+
+    description.textContent =
+      repository.description?.trim() ||
+      "This repository has no description.";
+
+    const owner =
+      document.createElement(
+        "p"
+      );
+
+    owner.textContent =
+      `Owner: ${repositoryOwner(
+        repository
+      )}`;
+
+    const visibility =
+      document.createElement(
+        "p"
+      );
+
+    visibility.textContent =
+      `Visibility: ${
+        repository.visibility ||
+        "public"
+      }`;
+
+    const button =
+      document.createElement(
+        "button"
+      );
+
+    button.type =
+      "button";
+
+    button.textContent =
+      "View details";
+
+    button.addEventListener(
+      "click",
+      function () {
+        loadRepositoryDetails(id);
+      }
+    );
+
+    card.appendChild(name);
+    card.appendChild(description);
+    card.appendChild(owner);
+    card.appendChild(visibility);
+    card.appendChild(button);
 
     listElement.appendChild(card);
   }
@@ -99,33 +282,33 @@ function renderRepositories(repositories) {
 
 async function loadPublicRepositories() {
   try {
-    const response = await fetch(
-      `${API_BASE}/api/repositories`
-    );
-
-    const body = await response.json();
-
-    if (!response.ok) {
-      throw new Error(
-        body.message ||
-        "Could not load public repositories."
+    const response =
+      await fetch(
+        `${API_BASE}/api/repositories`
       );
-    }
+
+    const body =
+      await readApiResponse(
+        response
+      );
 
     const repositories =
-      body.data?.repositories ??
-      body.data ??
-      body.repositories ??
-      [];
+      extractRepositories(body);
 
     const publicRepositories =
       repositories.filter(
-        (repository) =>
-          repository.visibility === "public" ||
-          !repository.visibility
+        function (repository) {
+          return (
+            repository.visibility ===
+              "public" ||
+            !repository.visibility
+          );
+        }
       );
 
-    renderRepositories(publicRepositories);
+    renderRepositories(
+      publicRepositories
+    );
   } catch (error) {
     showMessage(
       error.message,
@@ -134,7 +317,9 @@ async function loadPublicRepositories() {
   }
 }
 
-async function loadRepositoryDetails(id) {
+async function loadRepositoryDetails(
+  id
+) {
   if (!id) {
     showMessage(
       "The repository has no valid ID.",
@@ -143,19 +328,20 @@ async function loadRepositoryDetails(id) {
     return;
   }
 
+  selectedPublicRepositoryId =
+    Number(id);
+
+  const url =
+    `${API_BASE}/api/repositories/${id}`;
+
   try {
-    const response = await fetch(
-      `${API_BASE}/api/repositories/${id}`
-    );
+    const response =
+      await fetch(url);
 
-    const body = await response.json();
-
-    if (!response.ok) {
-      throw new Error(
-        body.message ||
-        "Could not load repository details."
+    const body =
+      await readApiResponse(
+        response
       );
-    }
 
     const repository =
       body.data?.repository ??
@@ -183,18 +369,27 @@ async function loadRepositoryDetails(id) {
     document.getElementById(
       "publicRepositoryVisibility"
     ).textContent =
-      repository.visibility ?? "public";
+      repository.visibility ||
+      "public";
 
     document.getElementById(
       "publicRepositoryDescription"
     ).textContent =
       repository.description?.trim() ||
-      "This repository has no description."
+      "This repository has no description.";
 
-    detailsElement.hidden = false;
-    detailsElement.scrollIntoView({
-      behavior: "smooth"
-    });
+    if (detailsElement) {
+      detailsElement.hidden =
+        false;
+
+      detailsElement.scrollIntoView({
+        behavior: "smooth"
+      });
+    }
+
+    showDetailsMessage(
+      "Repository details loaded."
+    );
   } catch (error) {
     showMessage(
       error.message,
@@ -203,13 +398,129 @@ async function loadRepositoryDetails(id) {
   }
 }
 
-function escapeHtml(value) {
-  return String(value)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
+async function loadPublicRepositoryData(
+  dataType
+) {
+  if (!selectedPublicRepositoryId) {
+    showDetailsMessage(
+      "Click View details for a repository first.",
+      true
+    );
+    return;
+  }
+
+  let outputElement;
+
+  if (dataType === "branches") {
+    outputElement =
+      branchesElement;
+  } else if (dataType === "history") {
+    outputElement =
+      historyElement;
+  } else if (dataType === "status") {
+    outputElement =
+      statusElement;
+  } else {
+    showDetailsMessage(
+      "Unsupported public repository data type.",
+      true
+    );
+    return;
+  }
+
+  if (outputElement) {
+    outputElement.textContent =
+      "Loading...";
+  }
+
+  const url =
+    `${API_BASE}/api/repositories/` +
+    `${selectedPublicRepositoryId}/` +
+    `${dataType}`;
+
+  try {
+    const response =
+      await fetch(url);
+
+    const body =
+      await readApiResponse(
+        response
+      );
+
+    const output =
+      body.data?.output ??
+      "No output was returned.";
+
+    if (outputElement) {
+      outputElement.textContent =
+        output;
+    }
+
+    showDetailsMessage(
+      `${dataType} loaded successfully.`
+    );
+  } catch (error) {
+    if (outputElement) {
+      outputElement.textContent =
+        error.message;
+    }
+
+    showDetailsMessage(
+      error.message,
+      true
+    );
+  }
 }
 
+function attachPublicRepositoryListeners() {
+  const branchesButton =
+    document.getElementById(
+      "loadPublicBranches"
+    );
+
+  const historyButton =
+    document.getElementById(
+      "loadPublicHistory"
+    );
+
+  const statusButton =
+    document.getElementById(
+      "loadPublicStatus"
+    );
+
+  if (branchesButton) {
+    branchesButton.addEventListener(
+      "click",
+      function () {
+        loadPublicRepositoryData(
+          "branches"
+        );
+      }
+    );
+  }
+
+  if (historyButton) {
+    historyButton.addEventListener(
+      "click",
+      function () {
+        loadPublicRepositoryData(
+          "history"
+        );
+      }
+    );
+  }
+
+  if (statusButton) {
+    statusButton.addEventListener(
+      "click",
+      function () {
+        loadPublicRepositoryData(
+          "status"
+        );
+      }
+    );
+  }
+}
+
+attachPublicRepositoryListeners();
 loadPublicRepositories();

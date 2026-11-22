@@ -6,22 +6,78 @@
     name="viewport"
     content="width=device-width, initial-scale=1.0"
   >
+
   <title>Public MiniVCS Repositories</title>
-  <link rel="stylesheet" href="css/style.css">
+
+  <link
+    rel="stylesheet"
+    href="css/style.css"
+  >
+
+  <style>
+    .public-page-header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .public-page-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .public-page-actions a {
+      display: inline-block;
+      padding: 9px 14px;
+      border: 1px solid #1f6feb;
+      border-radius: 6px;
+      background: #1f6feb;
+      color: #ffffff;
+      font-weight: 600;
+      text-decoration: none;
+    }
+
+    .public-page-actions a:hover {
+      background: #1158c7;
+      color: #ffffff;
+    }
+
+    .public-repository-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin: 18px 0;
+    }
+
+    .public-repository-actions button {
+      cursor: pointer;
+    }
+  </style>
 </head>
+
 <body>
   <main class="page-shell">
-    <header class="page-header">
+    <header class="page-header public-page-header">
       <div>
         <h1>Public repositories</h1>
+
         <p>
           Browse repositories shared publicly on MiniVCS.
         </p>
       </div>
 
-      <a href="login.html" class="button">
-        Login
-      </a>
+      <div class="public-page-actions">
+        <a href="login.html">
+          Login
+        </a>
+
+        <a href="repositories.html">
+          Repository dashboard
+        </a>
+      </div>
     </header>
 
     <section class="panel">
@@ -60,9 +116,60 @@
         <dt>Description</dt>
         <dd id="publicRepositoryDescription">-</dd>
       </dl>
+
+      <div class="public-repository-actions">
+        <button
+          id="loadPublicBranches"
+          type="button"
+        >
+          Load branches
+        </button>
+
+        <button
+          id="loadPublicHistory"
+          type="button"
+        >
+          Load history
+        </button>
+
+        <button
+          id="loadPublicStatus"
+          type="button"
+        >
+          Load status
+        </button>
+      </div>
+
+      <p
+        id="publicRepositoryDetailsMessage"
+        class="msg"
+        role="status"
+        hidden
+      ></p>
+
+      <h3>Branches</h3>
+
+      <pre
+        id="publicRepositoryBranches"
+        class="output-box"
+      >This repository's branches have not been loaded.</pre>
+
+      <h3>Commit history</h3>
+
+      <pre
+        id="publicRepositoryHistory"
+        class="output-box"
+      >This repository's history has not been loaded.</pre>
+
+      <h3>Status</h3>
+
+      <pre
+        id="publicRepositoryStatus"
+        class="output-box"
+      >This repository's status has not been loaded.</pre>
     </section>
   </main>
 
-  <script src="js/public-repositories.js"></script>
+  <script src="js/public-repositories.js?v=3"></script>
 </body>
 </html>

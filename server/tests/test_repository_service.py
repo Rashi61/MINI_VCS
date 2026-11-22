@@ -76,6 +76,7 @@ class RepositoryServiceTests(unittest.TestCase):
                 CREATE TABLE repositories (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     name TEXT NOT NULL,
+                    description TEXT NOT NULL DEFAULT '',
                     owner_id INTEGER NOT NULL,
                     visibility TEXT NOT NULL
                         CHECK (visibility IN ('private', 'public')),

@@ -1,7 +1,6 @@
 from functools import wraps
 
 from flask import Flask, jsonify, request
-from flask_cors import CORS
 
 from .auth import (
     login_user,
@@ -21,42 +20,35 @@ from .repository_service import (
     list_repositories,
     run_remote_operation,
     run_repository_command,
+    user_can_view_repository,
     run_repository_write_command,
+    user_can_view_repository,
     save_and_stage_file,
 )
-
+from flask_cors import CORS
 
 def success(message, data=None, status=200):
-    return (
-        jsonify(
-            {
-                "ok": True,
-                "message": message,
-                "data": data or {},
-            }
-        ),
-        status,
-    )
+    return jsonify(
+        {
+            "ok": True,
+            "message": message,
+            "data": data or {},
+        }
+    ), status
 
 
 def failure(message, error_code, status=400):
-    return (
-        jsonify(
-            {
-                "ok": False,
-                "message": message,
-                "error_code": error_code,
-            }
-        ),
-        status,
-    )
+    return jsonify(
+        {
+            "ok": False,
+            "message": message,
+            "error_code": error_code,
+        }
+    ), status
 
 
 def bearer_token():
-    header = request.headers.get(
-        "Authorization",
-        "",
-    )
+    header = request.headers.get("Authorization", "")
 
     if not header.startswith("Bearer "):
         return None
@@ -87,49 +79,22 @@ def require_login(handler):
                 401,
             )
 
-        return handler(
-            user_id,
-            *args,
-            **kwargs,
-        )
+        return handler(user_id, *args, **kwargs)
 
     return wrapped
 
 
-def repository_error_status(error):
-    message = str(error).lower()
-
-    if "permission" in message:
-        return 403
-
-    if "not found" in message:
-        return 404
-
-    return 400
-
-
 def create_app() -> Flask:
     app = Flask(__name__)
-
-    app.config["MAX_CONTENT_LENGTH"] = (
-        10 * 1024 * 1024
-    )
-
+    app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024
     settings = load_settings()
 
     CORS(
         app,
         origins=[settings.frontend_origin],
         supports_credentials=False,
-        allow_headers=[
-            "Content-Type",
-            "Authorization",
-        ],
-        methods=[
-            "GET",
-            "POST",
-            "OPTIONS",
-        ],
+        allow_headers=["Content-Type", "Authorization"],
+        methods=["GET", "POST", "OPTIONS"],
     )
 
     app.config["MINIVCS_SETTINGS"] = settings
@@ -151,7 +116,6 @@ def create_app() -> Flask:
                     "tables": tables,
                 },
             )
-
         except Exception:
             return failure(
                 "MiniVCS API database is unavailable.",
@@ -161,27 +125,13 @@ def create_app() -> Flask:
 
     @app.post("/api/auth/register")
     def register():
-        payload = (
-            request.get_json(
-                silent=True
-            )
-            or {}
-        )
+        payload = request.get_json(silent=True) or {}
 
         try:
             user_id = register_user(
-                payload.get(
-                    "username",
-                    "",
-                ),
-                payload.get(
-                    "email",
-                    "",
-                ),
-                payload.get(
-                    "password",
-                    "",
-                ),
+                payload.get("username", ""),
+                payload.get("email", ""),
+                payload.get("password", ""),
             )
 
             return success(
@@ -201,23 +151,12 @@ def create_app() -> Flask:
 
     @app.post("/api/auth/login")
     def login():
-        payload = (
-            request.get_json(
-                silent=True
-            )
-            or {}
-        )
+        payload = request.get_json(silent=True) or {}
 
         try:
             result = login_user(
-                payload.get(
-                    "username",
-                    "",
-                ),
-                payload.get(
-                    "password",
-                    "",
-                ),
+                payload.get("username", ""),
+                payload.get("password", ""),
             )
 
             return success(
@@ -244,9 +183,7 @@ def create_app() -> Flask:
                 400,
             )
 
-        return success(
-            "Logout successful."
-        )
+        return success("Logout successful.")
 
     @app.post("/api/repositories")
     @require_login
@@ -339,9 +276,7 @@ def create_app() -> Flask:
 
             return success(
                 "Repository created successfully.",
-                {
-                    "repository": repository,
-                },
+                repository,
                 201,
             )
 
@@ -357,22 +292,17 @@ def create_app() -> Flask:
         user_id = current_user_id()
 
         try:
-            public_repositories = (
-                list_repositories(
-                    settings,
-                    visibility="public",
-                )
+            public_repositories = list_repositories(
+                settings,
+                visibility="public",
             )
 
             if user_id is None:
                 visible = public_repositories
-
             else:
-                owned_repositories = (
-                    list_repositories(
-                        settings,
-                        owner_id=user_id,
-                    )
+                owned_repositories = list_repositories(
+                    settings,
+                    owner_id=user_id,
                 )
 
                 combined = {
@@ -381,13 +311,9 @@ def create_app() -> Flask:
                 }
 
                 for repository in owned_repositories:
-                    combined[
-                        repository["id"]
-                    ] = repository
+                    combined[repository["id"]] = repository
 
-                visible = list(
-                    combined.values()
-                )
+                visible = list(combined.values())
 
             return success(
                 "Repositories loaded.",
@@ -402,11 +328,12 @@ def create_app() -> Flask:
                 "REPOSITORY_ERROR",
                 400,
             )
-
     @app.get(
         "/api/repositories/<int:repository_id>"
     )
     def repository_details(repository_id):
+        user_id = current_user_id()
+
         repository = get_repository(
             settings,
             repository_id,
@@ -419,18 +346,27 @@ def create_app() -> Flask:
                 404,
             )
 
-        if repository["visibility"] != "public":
+        can_view = (
+            repository["visibility"] == "public"
+        )
+
+        if not can_view and user_id is not None:
+            can_view = user_can_view_repository(
+                settings,
+                repository,
+                user_id,
+            )
+
+        if not can_view:
             return failure(
-                "This repository is private.",
+                "You do not have permission to view this repository.",
                 "PRIVATE_REPOSITORY",
                 403,
             )
 
         return success(
             "Repository details loaded.",
-            {
-                "repository": repository,
-            },
+            repository,
         )
 
     @app.get(
@@ -456,10 +392,16 @@ def create_app() -> Flask:
             )
 
         except RepositoryServiceError as error:
+            status = (
+                403
+                if "permission" in str(error).lower()
+                else 404
+            )
+
             return failure(
                 str(error),
                 "REPOSITORY_STATUS_ERROR",
-                repository_error_status(error),
+                status,
             )
 
     @app.get(
@@ -485,12 +427,17 @@ def create_app() -> Flask:
             )
 
         except RepositoryServiceError as error:
+            status = (
+                403
+                if "permission" in str(error).lower()
+                else 404
+            )
+
             return failure(
                 str(error),
                 "REPOSITORY_HISTORY_ERROR",
-                repository_error_status(error),
+                status,
             )
-
     @app.get(
         "/api/repositories/<int:repository_id>/branches"
     )
@@ -514,31 +461,28 @@ def create_app() -> Flask:
             )
 
         except RepositoryServiceError as error:
+            message = str(error)
+
+            if "permission" in message.lower():
+                status = 403
+            elif "not found" in message.lower():
+                status = 404
+            else:
+                status = 400
+
             return failure(
-                str(error),
+                message,
                 "BRANCH_LIST_ERROR",
-                repository_error_status(error),
+                status,
             )
 
     @app.post(
         "/api/repositories/<int:repository_id>/branches"
     )
     @require_login
-    def create_repository_branch(
-        user_id,
-        repository_id,
-    ):
-        payload = (
-            request.get_json(
-                silent=True
-            )
-            or {}
-        )
-
-        branch_name = payload.get(
-            "name",
-            "",
-        )
+    def create_repository_branch(user_id, repository_id):
+        payload = request.get_json(silent=True) or {}
+        branch_name = payload.get("name", "")
 
         if not isinstance(branch_name, str):
             return failure(
@@ -596,12 +540,149 @@ def create_app() -> Flask:
             )
 
         except RepositoryServiceError as error:
+            message = str(error)
+
+            if "permission" in message.lower():
+                status = 403
+            elif "not found" in message.lower():
+                status = 404
+            else:
+                status = 400
+
             return failure(
-                str(error),
+                message,
                 "BRANCH_CREATE_ERROR",
-                repository_error_status(error),
+                status,
+            )
+    @app.post(
+        "/api/repositories/<int:repository_id>/commit"
+    )
+    @require_login
+    def commit_repository(user_id, repository_id):
+        payload = request.get_json(silent=True) or {}
+        message = payload.get("message", "")
+
+        if not isinstance(message, str):
+            return failure(
+                "Commit message must be a string.",
+                "VALIDATION_ERROR",
+                400,
             )
 
+        message = message.strip()
+
+        if not message:
+            return failure(
+                "Commit message is required.",
+                "VALIDATION_ERROR",
+                400,
+            )
+
+        if len(message) > 500:
+            return failure(
+                "Commit message is too long.",
+                "VALIDATION_ERROR",
+                400,
+            )
+
+        try:
+            result = run_repository_write_command(
+                settings,
+                repository_id,
+                [
+                    "commit",
+                    message,
+                ],
+                user_id,
+                "push",
+            )
+
+            return success(
+                "Commit created successfully.",
+                {
+                    "repository": result["repository"],
+                    "output": result["output"],
+                },
+                201,
+            )
+
+        except RepositoryServiceError as error:
+            message_text = str(error)
+
+            if "permission" in message_text.lower():
+                status = 403
+            elif "not found" in message_text.lower():
+                status = 404
+            else:
+                status = 400
+
+            return failure(
+                message_text,
+                "COMMIT_ERROR",
+                status,
+            )
+    @app.post(
+        "/api/repositories/<int:repository_id>/files"
+    )
+    @require_login
+    def upload_repository_file(user_id, repository_id):
+        relative_path = request.form.get(
+            "path",
+            "",
+        )
+
+        uploaded_file = request.files.get(
+            "file"
+        )
+
+        if uploaded_file is None:
+            return failure(
+                "A multipart file field named 'file' is required.",
+                "FILE_REQUIRED",
+                400,
+            )
+
+        if not uploaded_file.filename:
+            return failure(
+                "The uploaded file must have a filename.",
+                "FILENAME_REQUIRED",
+                400,
+            )
+
+        try:
+            result = save_and_stage_file(
+                settings,
+                repository_id,
+                user_id,
+                relative_path,
+                uploaded_file,
+            )
+
+            return success(
+                "File uploaded and staged successfully.",
+                {
+                    "repository": result["repository"],
+                    "path": result["path"],
+                    "output": result["output"],
+                },
+                201,
+            )
+
+        except RepositoryServiceError as error:
+            message = str(error)
+
+            if "permission" in message.lower():
+                status = 403
+            elif "not found" in message.lower():
+                status = 404
+            else:
+                status = 400
+
+            return failure(
+                message,
+                "FILE_UPLOAD_ERROR",
+                status,
+            )
     @app.post(
         "/api/repositories/<int:repository_id>/branches/switch"
     )
@@ -610,12 +691,9 @@ def create_app() -> Flask:
         user_id,
         repository_id,
     ):
-        payload = (
-            request.get_json(
-                silent=True
-            )
-            or {}
-        )
+        payload = request.get_json(
+            silent=True
+        ) or {}
 
         branch_name = payload.get(
             "name",
@@ -676,140 +754,20 @@ def create_app() -> Flask:
             )
 
         except RepositoryServiceError as error:
+            message = str(error)
+
+            if "permission" in message.lower():
+                status = 403
+            elif "not found" in message.lower():
+                status = 404
+            else:
+                status = 400
+
             return failure(
-                str(error),
+                message,
                 "BRANCH_SWITCH_ERROR",
-                repository_error_status(error),
+                status,
             )
-
-    @app.post(
-        "/api/repositories/<int:repository_id>/commit"
-    )
-    @require_login
-    def commit_repository(
-        user_id,
-        repository_id,
-    ):
-        payload = (
-            request.get_json(
-                silent=True
-            )
-            or {}
-        )
-
-        message = payload.get(
-            "message",
-            "",
-        )
-
-        if not isinstance(message, str):
-            return failure(
-                "Commit message must be a string.",
-                "VALIDATION_ERROR",
-                400,
-            )
-
-        message = message.strip()
-
-        if not message:
-            return failure(
-                "Commit message is required.",
-                "VALIDATION_ERROR",
-                400,
-            )
-
-        if len(message) > 500:
-            return failure(
-                "Commit message is too long.",
-                "VALIDATION_ERROR",
-                400,
-            )
-
-        try:
-            result = run_repository_write_command(
-                settings,
-                repository_id,
-                [
-                    "commit",
-                    message,
-                ],
-                user_id,
-                "push",
-            )
-
-            return success(
-                "Commit created successfully.",
-                {
-                    "repository": result["repository"],
-                    "output": result["output"],
-                },
-                201,
-            )
-
-        except RepositoryServiceError as error:
-            return failure(
-                str(error),
-                "COMMIT_ERROR",
-                repository_error_status(error),
-            )
-
-    @app.post(
-        "/api/repositories/<int:repository_id>/files"
-    )
-    @require_login
-    def upload_repository_file(
-        user_id,
-        repository_id,
-    ):
-        relative_path = request.form.get(
-            "path",
-            "",
-        )
-
-        uploaded_file = request.files.get(
-            "file"
-        )
-
-        if uploaded_file is None:
-            return failure(
-                "A multipart file field named 'file' is required.",
-                "FILE_REQUIRED",
-                400,
-            )
-
-        if not uploaded_file.filename:
-            return failure(
-                "The uploaded file must have a filename.",
-                "FILENAME_REQUIRED",
-                400,
-            )
-
-        try:
-            result = save_and_stage_file(
-                settings,
-                repository_id,
-                user_id,
-                relative_path,
-                uploaded_file,
-            )
-
-            return success(
-                "File uploaded and staged successfully.",
-                {
-                    "repository": result["repository"],
-                    "path": result["path"],
-                    "output": result["output"],
-                },
-                201,
-            )
-
-        except RepositoryServiceError as error:
-            return failure(
-                str(error),
-                "FILE_UPLOAD_ERROR",
-                repository_error_status(error),
-            )
-
     @app.post(
         "/api/repositories/<int:repository_id>/remote/<operation>"
     )
@@ -848,10 +806,19 @@ def create_app() -> Flask:
             )
 
         except RepositoryServiceError as error:
-            return failure(
-                str(error),
-                "REMOTE_OPERATION_ERROR",
-                repository_error_status(error),
-            )
+            message = str(error)
+            lowered = message.lower()
 
+            if "permission" in lowered:
+                status = 403
+            elif "not found" in lowered:
+                status = 404
+            else:
+                status = 400
+
+            return failure(
+                message,
+                "REMOTE_OPERATION_ERROR",
+                status,
+            )    
     return app

@@ -52,10 +52,31 @@ def initialize_database(db_path=None):
             schema = schema_file.read()
 
         connection.executescript(schema)
+
+        ensure_repository_description_column(
+            connection
+        )
         connection.commit()
     finally:
         connection.close()
 
+def ensure_repository_description_column(connection):
+    columns = {
+        row[1]
+        for row in connection.execute(
+            "PRAGMA table_info(repositories)"
+        ).fetchall()
+    }
+
+    if "description" not in columns:
+        connection.execute(
+            """
+            ALTER TABLE repositories
+            ADD COLUMN description TEXT NOT NULL DEFAULT ''
+            """
+        )
+
+        connection.commit()
 
 def check_tables(db_path=None):
     connection = get_connection(db_path)
