@@ -10,6 +10,7 @@
 #include <iostream>
 #include <string>
 #include <vector>
+#include <iterator>
 
 namespace fs = std::filesystem;
 
@@ -193,10 +194,10 @@ void testConflictingMerge() {
 
     assert(conflictedFile);
 
-    const std::string markerContents(
-        std::istreambuf_iterator<char>(conflictedFile),
-        std::istreambuf_iterator<char>()
-    );
+    const std::string markerContents{
+    std::istreambuf_iterator<char>(conflictedFile),
+    std::istreambuf_iterator<char>()
+};
 
     assert(
         markerContents.find("<<<<<<< ours") !=
