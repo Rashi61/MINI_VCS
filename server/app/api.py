@@ -24,6 +24,8 @@ from .repository_service import (
     run_repository_write_command,
     user_can_view_repository,
     save_and_stage_file,
+    list_public_repository_files,
+    read_public_repository_file,
 )
 from flask_cors import CORS
 
@@ -82,7 +84,37 @@ def require_login(handler):
         return handler(user_id, *args, **kwargs)
 
     return wrapped
+def repository_error_status(error):
+    message = str(error).lower()
 
+    if "permission" in message:
+        return 403
+
+    if "not found" in message:
+        return 404
+
+    if "missing" in message:
+        return 404
+
+    if "outside" in message:
+        return 400
+
+    if "parent" in message:
+        return 400
+
+    if "absolute" in message:
+        return 400
+
+    if "metadata" in message:
+        return 400
+
+    if "directory" in message:
+        return 400
+
+    if "file" in message:
+        return 400
+
+    return 400
 
 def create_app() -> Flask:
     app = Flask(__name__)
@@ -820,5 +852,123 @@ def create_app() -> Flask:
                 message,
                 "REMOTE_OPERATION_ERROR",
                 status,
-            )    
+            )
+    @app.get(
+        "/api/repositories/<int:repository_id>/files"
+    )
+    def repository_files(repository_id):
+        user_id = current_user_id()
+
+        repository = get_repository(
+            settings,
+            repository_id,
+        )
+
+        if repository is None:
+            return failure(
+                "Repository was not found.",
+                "REPOSITORY_NOT_FOUND",
+                404,
+            )
+
+        can_view = (
+            repository["visibility"] == "public"
+        )
+
+        if not can_view and user_id is not None:
+            can_view = user_can_view_repository(
+                settings,
+                repository,
+                user_id,
+            )
+
+        if not can_view:
+            return failure(
+                "You do not have permission to view this repository.",
+                "PRIVATE_REPOSITORY",
+                403,
+            )
+
+        relative_path = request.args.get(
+            "path",
+            "",
+        )
+
+        try:
+            result = list_public_repository_files(
+                settings,
+                repository_id,
+                relative_path,
+            )
+
+            return success(
+                "Repository files loaded.",
+                result,
+            )
+
+        except RepositoryServiceError as error:
+            return failure(
+                str(error),
+                "FILE_LIST_ERROR",
+                repository_error_status(error),
+            )
+
+    @app.get(
+        "/api/repositories/<int:repository_id>/files/<path:file_path>"
+    )
+    def repository_file_content(
+        repository_id,
+        file_path,
+    ):
+        user_id = current_user_id()
+
+        repository = get_repository(
+            settings,
+            repository_id,
+        )
+
+        if repository is None:
+            return failure(
+                "Repository was not found.",
+                "REPOSITORY_NOT_FOUND",
+                404,
+            )
+
+        can_view = (
+            repository["visibility"] == "public"
+        )
+
+        if not can_view and user_id is not None:
+            can_view = user_can_view_repository(
+                settings,
+                repository,
+                user_id,
+            )
+
+        if not can_view:
+            return failure(
+                "You do not have permission to view this repository.",
+                "PRIVATE_REPOSITORY",
+                403,
+            )
+
+        try:
+            result = read_public_repository_file(
+                settings,
+                repository_id,
+                file_path,
+            )
+
+            return success(
+                "Repository file loaded.",
+                result,
+            )
+
+        except RepositoryServiceError as error:
+            return failure(
+                str(error),
+                "FILE_READ_ERROR",
+                repository_error_status(error),
+            )
+   
     return app

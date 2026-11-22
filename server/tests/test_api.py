@@ -5,6 +5,8 @@ import unittest
 from pathlib import Path
 import uuid
 import io
+import io
+import json
 
 TEST_ROOT = Path(
     tempfile.mkdtemp(
@@ -197,7 +199,6 @@ class MiniVCSApiTests(unittest.TestCase):
             "path",
             body["data"],
         )
-
     def test_public_listing_hides_private_repository(self):
         token = self.register_and_login()
 
@@ -763,6 +764,223 @@ class MiniVCSApiTests(unittest.TestCase):
         self.assertEqual(
             body["data"]["operation"],
             "push",
+        )
+    def create_public_repository_with_file(self):
+        token = self.register_and_login()
+
+        create_response = self.client.post(
+            "/api/repositories",
+            headers={
+                "Authorization": f"Bearer {token}",
+            },
+            json={
+                "name": "public-file-test",
+                "description": "Public file browser test.",
+                "visibility": "public",
+            },
+        )
+
+        self.assertEqual(
+            create_response.status_code,
+            201,
+        )
+
+        create_body = (
+            create_response.get_json()
+        )
+
+        repository = (
+            create_body["data"]
+        )
+
+        repository_id = repository["id"]
+
+        upload_response = self.client.post(
+            f"/api/repositories/{repository_id}/files",
+            headers={
+                "Authorization": f"Bearer {token}",
+            },
+            data={
+                "path": "docs/readme.txt",
+                "file": (
+                    io.BytesIO(
+                        b"Public file browser test."
+                    ),
+                    "readme.txt",
+                ),
+            },
+            content_type="multipart/form-data",
+        )
+
+        self.assertEqual(
+            upload_response.status_code,
+            201,
+        )
+
+        return token, repository_id
+
+    def test_public_file_listing(self):
+        token, repository_id = (
+            self.create_public_repository_with_file()
+        )
+
+        response = self.client.get(
+            f"/api/repositories/{repository_id}/files"
+        )
+
+        self.assertEqual(
+            response.status_code,
+            200,
+        )
+
+        body = response.get_json()
+
+        self.assertTrue(body["ok"])
+
+        entries = (
+            body["data"]["entries"]
+        )
+
+        self.assertTrue(
+            any(
+                entry["path"] == "docs"
+                and entry["type"] == "directory"
+                for entry in entries
+            )
+        )
+
+    def test_public_nested_file_listing(self):
+        token, repository_id = (
+            self.create_public_repository_with_file()
+        )
+
+        response = self.client.get(
+            f"/api/repositories/{repository_id}/files",
+            query_string={
+                "path": "docs",
+            },
+        )
+
+        self.assertEqual(
+            response.status_code,
+            200,
+        )
+
+        entries = (
+            response
+            .get_json()["data"]["entries"]
+        )
+
+        self.assertTrue(
+            any(
+                entry["path"] == "docs/readme.txt"
+                and entry["type"] == "file"
+                for entry in entries
+            )
+        )
+
+    def test_public_file_content(self):
+        token, repository_id = (
+            self.create_public_repository_with_file()
+        )
+
+        response = self.client.get(
+            f"/api/repositories/{repository_id}"
+            "/files/docs/readme.txt"
+        )
+
+        self.assertEqual(
+            response.status_code,
+            200,
+        )
+
+        body = response.get_json()
+
+        self.assertEqual(
+            body["data"]["path"],
+            "docs/readme.txt",
+        )
+
+        self.assertEqual(
+            body["data"]["content"],
+            "Public file browser test.",
+        )
+
+    def test_public_file_blocks_minivcs(self):
+        token, repository_id = (
+            self.create_public_repository_with_file()
+        )
+
+        response = self.client.get(
+            f"/api/repositories/{repository_id}"
+            "/files/.minivcs/config"
+        )
+
+        self.assertEqual(
+            response.status_code,
+            400,
+        )
+
+        body = response.get_json()
+
+        self.assertFalse(body["ok"])
+
+    def test_public_file_blocks_parent_path(self):
+        token, repository_id = (
+            self.create_public_repository_with_file()
+        )
+
+        response = self.client.get(
+            f"/api/repositories/{repository_id}/files",
+            query_string={
+                "path": "../server.db",
+            },
+        )
+
+        self.assertEqual(
+            response.status_code,
+            400,
+        )
+
+    def test_private_file_browser_requires_access(self):
+        token = self.register_and_login()
+
+        create_response = self.client.post(
+            "/api/repositories",
+            headers={
+                "Authorization": f"Bearer {token}",
+            },
+            json={
+                "name": "private-file-test",
+                "description": "",
+                "visibility": "private",
+            },
+        )
+
+        self.assertEqual(
+            create_response.status_code,
+            201,
+        )
+
+        repository_id = (
+            create_response
+            .get_json()["data"]["id"]
+        )
+
+        self.client.post(
+            "/api/auth/logout",
+            headers={
+                "Authorization": f"Bearer {token}",
+            },
+        )
+
+        response = self.client.get(
+            f"/api/repositories/{repository_id}/files"
+        )
+
+        self.assertEqual(
+            response.status_code,
+            403,
         )
         
 if __name__ == "__main__":

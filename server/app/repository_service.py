@@ -826,3 +826,196 @@ def run_remote_operation(
         "operation": operation,
         "output": output,
     }
+MAX_PUBLIC_FILE_SIZE = 512 * 1024
+
+
+def _safe_repository_file_path(
+    settings,
+    repository_id,
+    relative_path,
+):
+    if not isinstance(relative_path, str):
+        raise RepositoryServiceError(
+            "File path must be text."
+        )
+
+    relative_path = relative_path.strip()
+
+    if not relative_path:
+        raise RepositoryServiceError(
+            "File path is required."
+        )
+
+    candidate_path = Path(relative_path)
+
+    if candidate_path.is_absolute():
+        raise RepositoryServiceError(
+            "Absolute file paths are not allowed."
+        )
+
+    parts = candidate_path.parts
+
+    if ".." in parts:
+        raise RepositoryServiceError(
+            "Parent-directory paths are not allowed."
+        )
+
+    if ".minivcs" in parts:
+        raise RepositoryServiceError(
+            "MiniVCS metadata cannot be accessed."
+        )
+
+    repository_root = (
+        settings.repository_root / str(repository_id)
+    ).resolve()
+
+    target_path = (
+        repository_root / candidate_path
+    ).resolve()
+
+    try:
+        target_path.relative_to(repository_root)
+    except ValueError as error:
+        raise RepositoryServiceError(
+            "The requested path is outside the repository."
+        ) from error
+
+    return target_path
+
+
+def list_public_repository_files(
+    settings,
+    repository_id,
+    relative_path="",
+):
+    repository = get_repository(
+        settings,
+        repository_id,
+    )
+
+    if repository is None:
+        raise RepositoryServiceError(
+            "Repository was not found."
+        )
+
+    repository_root = (
+        settings.repository_root / str(repository_id)
+    ).resolve()
+
+    if not repository_root.is_dir():
+        raise RepositoryServiceError(
+            "Repository storage directory is missing."
+        )
+
+    if relative_path:
+        directory = _safe_repository_file_path(
+            settings,
+            repository_id,
+            relative_path,
+        )
+    else:
+        directory = repository_root
+
+    if not directory.exists():
+        raise RepositoryServiceError(
+            "The requested directory was not found."
+        )
+
+    if not directory.is_dir():
+        raise RepositoryServiceError(
+            "The requested path is not a directory."
+        )
+
+    entries = []
+
+    for entry in sorted(
+        directory.iterdir(),
+        key=lambda item: (
+            not item.is_dir(),
+            item.name.lower(),
+        ),
+    ):
+        if entry.name == ".minivcs":
+            continue
+
+        relative_entry = entry.relative_to(
+            repository_root
+        )
+
+        entries.append(
+            {
+                "name": entry.name,
+                "path": relative_entry.as_posix(),
+                "type": (
+                    "directory"
+                    if entry.is_dir()
+                    else "file"
+                ),
+                "size": (
+                    entry.stat().st_size
+                    if entry.is_file()
+                    else None
+                ),
+            }
+        )
+
+    return {
+        "repository": repository,
+        "path": relative_path,
+        "entries": entries,
+    }
+
+
+def read_public_repository_file(
+    settings,
+    repository_id,
+    relative_path,
+):
+    repository = get_repository(
+        settings,
+        repository_id,
+    )
+
+    if repository is None:
+        raise RepositoryServiceError(
+            "Repository was not found."
+        )
+
+    file_path = _safe_repository_file_path(
+        settings,
+        repository_id,
+        relative_path,
+    )
+
+    if not file_path.exists():
+        raise RepositoryServiceError(
+            "The requested file was not found."
+        )
+
+    if not file_path.is_file():
+        raise RepositoryServiceError(
+            "The requested path is not a file."
+        )
+
+    file_size = file_path.stat().st_size
+
+    if file_size > MAX_PUBLIC_FILE_SIZE:
+        raise RepositoryServiceError(
+            "The requested file is too large to display."
+        )
+
+    try:
+        content = file_path.read_text(
+            encoding="utf-8"
+        )
+    except UnicodeDecodeError as error:
+        raise RepositoryServiceError(
+            "The requested file is not a UTF-8 text file."
+        ) from error
+
+    return {
+        "repository": repository,
+        "path": relative_path,
+        "size": file_size,
+        "content": content,
+    }

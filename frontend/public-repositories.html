@@ -167,9 +167,45 @@
         id="publicRepositoryStatus"
         class="output-box"
       >This repository's status has not been loaded.</pre>
+      <hr>
+      <h3>Repository files</h3>
+
+      <div class="file-browser-toolbar">
+        <button
+          id="publicFilesUp"
+          type="button"
+        >
+          Up
+        </button>
+
+        <span id="publicFilesCurrentPath">
+          /
+        </span>
+      </div>
+
+      <p
+        id="publicFilesMessage"
+        class="msg"
+        role="status"
+        hidden
+      ></p>
+
+      <div
+        id="publicFilesList"
+        class="public-files-list"
+      ></div>
+
+      <h3 id="publicFileTitle">
+        Select a file
+      </h3>
+
+      <pre
+        id="publicFileContent"
+        class="output-box"
+      >Select a text file from the repository.</pre>
     </section>
   </main>
 
-  <script src="js/public-repositories.js?v=3"></script>
+  <script src="js/public-repositories.js?v=5"></script>
 </body>
 </html>

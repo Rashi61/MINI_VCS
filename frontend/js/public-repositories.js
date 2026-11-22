@@ -41,6 +41,38 @@ const statusElement =
     "publicRepositoryStatus"
   );
 
+let publicFilesCurrentPath = "";
+
+const publicFilesUpButton =
+  document.getElementById(
+    "publicFilesUp"
+  );
+
+const publicFilesCurrentPathElement =
+  document.getElementById(
+    "publicFilesCurrentPath"
+  );
+
+const publicFilesMessageElement =
+  document.getElementById(
+    "publicFilesMessage"
+  );
+
+const publicFilesListElement =
+  document.getElementById(
+    "publicFilesList"
+  );
+
+const publicFileTitleElement =
+  document.getElementById(
+    "publicFileTitle"
+  );
+
+const publicFileContentElement =
+  document.getElementById(
+    "publicFileContent"
+  );
+
 function showMessage(
   message,
   isError = false
@@ -390,6 +422,12 @@ async function loadRepositoryDetails(
     showDetailsMessage(
       "Repository details loaded."
     );
+    publicFilesCurrentPath =
+      "";
+
+    clearPublicFileContent();
+    updatePublicFilesPath();
+    loadPublicFiles("");
   } catch (error) {
     showMessage(
       error.message,
@@ -521,6 +559,271 @@ function attachPublicRepositoryListeners() {
     );
   }
 }
+function showPublicFilesMessage(
+  message,
+  isError = false
+) {
+  if (!publicFilesMessageElement) {
+    return;
+  }
+
+  publicFilesMessageElement.textContent =
+    message;
+
+  publicFilesMessageElement.hidden =
+    false;
+
+  publicFilesMessageElement.className =
+    isError
+      ? "msg err"
+      : "msg ok";
+}
+
+function updatePublicFilesPath() {
+  if (
+    publicFilesCurrentPathElement
+  ) {
+    publicFilesCurrentPathElement.textContent =
+      publicFilesCurrentPath
+        ? `/${publicFilesCurrentPath}`
+        : "/";
+  }
+
+  if (publicFilesUpButton) {
+    publicFilesUpButton.disabled =
+      !publicFilesCurrentPath;
+  }
+}
+
+function parentPublicPath(path) {
+  const parts =
+    path.split("/").filter(Boolean);
+
+  parts.pop();
+
+  return parts.join("/");
+}
+
+function encodePathForApi(path) {
+  return path
+    .split("/")
+    .filter(Boolean)
+    .map(
+      (part) =>
+        encodeURIComponent(part)
+    )
+    .join("/");
+}
+
+function clearPublicFileContent() {
+  if (publicFileTitleElement) {
+    publicFileTitleElement.textContent =
+      "Select a file";
+  }
+
+  if (publicFileContentElement) {
+    publicFileContentElement.textContent =
+      "Select a text file from the repository.";
+  }
+}
+
+async function loadPublicFiles(
+  relativePath = ""
+) {
+  if (!selectedPublicRepositoryId) {
+    showPublicFilesMessage(
+      "Select a repository first.",
+      true
+    );
+    return;
+  }
+
+  publicFilesCurrentPath =
+    relativePath;
+
+  updatePublicFilesPath();
+
+  if (publicFilesListElement) {
+    publicFilesListElement.textContent =
+      "Loading...";
+  }
+
+  try {
+    const query =
+      relativePath
+        ? `?path=${encodeURIComponent(
+            relativePath
+          )}`
+        : "";
+
+    const response =
+      await fetch(
+        `${API_BASE}/api/repositories/` +
+        `${selectedPublicRepositoryId}/files` +
+        query
+      );
+
+    const body =
+      await readApiResponse(response);
+
+    renderPublicFiles(
+      body.data?.entries || []
+    );
+
+    showPublicFilesMessage(
+      "Files loaded."
+    );
+  } catch (error) {
+    if (publicFilesListElement) {
+      publicFilesListElement.textContent =
+        error.message;
+    }
+
+    showPublicFilesMessage(
+      error.message,
+      true
+    );
+  }
+}
+
+function renderPublicFiles(entries) {
+  if (!publicFilesListElement) {
+    return;
+  }
+
+  publicFilesListElement.innerHTML =
+    "";
+
+  if (!entries.length) {
+    publicFilesListElement.textContent =
+      "This directory is empty.";
+    return;
+  }
+
+  for (const entry of entries) {
+    const button =
+      document.createElement(
+        "button"
+      );
+
+    button.type =
+      "button";
+
+    button.className =
+      "public-file-entry";
+
+    const name =
+      document.createElement(
+        "span"
+      );
+
+    name.className =
+      "public-file-entry-name";
+
+    name.textContent =
+      entry.type === "directory"
+        ? `📁 ${entry.name}`
+        : `📄 ${entry.name}`;
+
+    const type =
+      document.createElement(
+        "span"
+      );
+
+    type.className =
+      "public-file-entry-type";
+
+    type.textContent =
+      entry.type === "directory"
+        ? "Directory"
+        : `${entry.size ?? 0} bytes`;
+
+    button.appendChild(name);
+    button.appendChild(type);
+
+    button.addEventListener(
+      "click",
+      () => {
+        if (entry.type === "directory") {
+          loadPublicFiles(entry.path);
+        } else {
+          loadPublicFileContent(entry.path);
+        }
+      }
+    );
+
+    publicFilesListElement.appendChild(
+      button
+    );
+  }
+}
+
+async function loadPublicFileContent(
+  filePath
+) {
+  if (!selectedPublicRepositoryId) {
+    showPublicFilesMessage(
+      "Select a repository first.",
+      true
+    );
+    return;
+  }
+
+  if (publicFileTitleElement) {
+    publicFileTitleElement.textContent =
+      filePath;
+  }
+
+  if (publicFileContentElement) {
+    publicFileContentElement.textContent =
+      "Loading...";
+  }
+
+  try {
+    const encodedPath =
+      encodePathForApi(filePath);
+
+    const response =
+      await fetch(
+        `${API_BASE}/api/repositories/` +
+        `${selectedPublicRepositoryId}/files/` +
+        encodedPath
+      );
+
+    const body =
+      await readApiResponse(response);
+
+    if (publicFileContentElement) {
+      publicFileContentElement.textContent =
+        body.data?.content ||
+        "";
+    }
+
+    showPublicFilesMessage(
+      "File loaded."
+    );
+  } catch (error) {
+    if (publicFileContentElement) {
+      publicFileContentElement.textContent =
+        error.message;
+    }
+
+    showPublicFilesMessage(
+      error.message,
+      true
+    );
+  }
+}
+publicFilesUpButton?.addEventListener(
+  "click",
+  () => {
+    loadPublicFiles(
+      parentPublicPath(
+        publicFilesCurrentPath
+      )
+    );
+  }
+);
 
 attachPublicRepositoryListeners();
 loadPublicRepositories();
