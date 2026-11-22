@@ -8,6 +8,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 find_package(OpenSSL REQUIRED COMPONENTS Crypto)
 
+# Main MiniVCS executable
 add_executable(minivcs
     src/main.cpp
     src/repository/repository.cpp
@@ -21,6 +22,7 @@ add_executable(minivcs
     src/RetentionManager.cpp
     src/vcs/DiffManager.cpp
     src/vcs/branch.cpp
+    src/vcs/MergeManager.cpp
     src/RemoteManager.cpp
     src/member3.cpp
     third_party/sqlite3/sqlite3.c
@@ -34,6 +36,8 @@ target_include_directories(minivcs PRIVATE
 target_link_libraries(minivcs PRIVATE
     OpenSSL::Crypto
 )
+
+# Branch-management tests
 add_executable(minivcs_branch_tests
     tests/test_branching.cpp
     src/vcs/branch.cpp
@@ -53,8 +57,37 @@ target_link_libraries(minivcs_branch_tests PRIVATE
     OpenSSL::Crypto
 )
 
+# Enable CTest
 enable_testing()
 
+# Merge-management integration tests
+add_executable(minivcs_merge_tests
+    tests/test_merge.cpp
+    src/repository/repository.cpp
+    src/vcs/MergeManager.cpp
+    src/vcs/branch.cpp
+    src/vcs/CommitManager.cpp
+    src/vcs/commit.cpp
+    src/vcs/FileManager.cpp
+    src/security/HashManager.cpp
+    src/RetentionManager.cpp
+    src/vcs/DiffManager.cpp
+)
+
+target_include_directories(minivcs_merge_tests PRIVATE
+    include
+)
+
+target_link_libraries(minivcs_merge_tests PRIVATE
+    OpenSSL::Crypto
+)
+
+add_test(
+    NAME minivcs_merge_tests
+    COMMAND minivcs_merge_tests
+)
+
+# Python regression and integrity tests
 find_package(Python3 COMPONENTS Interpreter QUIET)
 
 if(Python3_Interpreter_FOUND)
@@ -80,6 +113,7 @@ if(Python3_Interpreter_FOUND)
     )
 endif()
 
+# Branch-management CTest registration
 add_test(
     NAME minivcs_branch_tests
     COMMAND minivcs_branch_tests
