@@ -82,6 +82,25 @@
 
     <section class="panel">
       <h2>Available repositories</h2>
+      <div class="public-search">
+        <label for="publicRepositorySearch">
+          Search public repositories
+        </label>
+
+        <input
+          id="publicRepositorySearch"
+          type="search"
+          placeholder="Search by name, owner, or description"
+          autocomplete="off"
+        >
+
+        <button
+          id="clearPublicRepositorySearch"
+          type="button"
+        >
+          Clear
+        </button>
+      </div>
 
       <p
         id="publicRepositoryMessage"
@@ -207,5 +226,6 @@
   </main>
 
   <script src="js/public-repositories.js?v=5"></script>
+  <script src="js/public-search.js?v=2"></script>
 </body>
 </html>
