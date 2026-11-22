@@ -5,7 +5,7 @@
 #include <optional>
 #include <string>
 #include <unordered_set>
-#include<unordered_map>
+#include <unordered_map>
 #include <vector>
 #include "Commit.h"
 
@@ -30,12 +30,17 @@ private:
         const std::string& ours,
         const std::string& theirs
     ) const;
-        bool buildThreeWayMerge(
+    bool buildThreeWayMerge(
         const Commit& base,
         const Commit& ours,
         const Commit& theirs,
         std::unordered_map<std::string, std::string>& mergedHashes,
         std::vector<std::string>& conflicts
+    ) const;
+    bool materializeConflictMarkers(
+        const Commit& ours,
+        const Commit& theirs,
+        const std::vector<std::string>& conflicts
     ) const;
 
 public:

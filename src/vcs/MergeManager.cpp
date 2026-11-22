@@ -10,7 +10,7 @@
 #include <optional>
 #include <unordered_map>
 #include <unordered_set>
-
+#include <fstream>
 
 MergeManager::MergeManager(
     const std::filesystem::path& rootPath
@@ -173,6 +173,137 @@ bool MergeManager::buildThreeWayMerge(
 
     return conflicts.empty();
 }
+bool MergeManager::materializeConflictMarkers(
+    const Commit& ours,
+    const Commit& theirs,
+    const std::vector<std::string>& conflicts
+) const {
+    namespace fs = std::filesystem;
+
+    CommitManager commitManager(repositoryRoot);
+
+    const fs::path oursSnapshot =
+        commitManager.getSnapshotPath(ours.getId());
+
+    const fs::path theirsSnapshot =
+        commitManager.getSnapshotPath(theirs.getId());
+
+    auto readSnapshotFile =
+        [](const fs::path& snapshotRoot,
+           const std::string& relativePath,
+           std::string& contents) -> bool {
+            const fs::path path =
+                snapshotRoot / fs::path(relativePath);
+
+            std::error_code ec;
+
+            if (!fs::exists(path, ec)) {
+                if (ec) {
+                    return false;
+                }
+
+                contents =
+                    "[file deleted on this branch]\n";
+                return true;
+            }
+
+            if (!fs::is_regular_file(path, ec) || ec) {
+                return false;
+            }
+
+            std::ifstream input(path, std::ios::binary);
+
+            if (!input) {
+                return false;
+            }
+
+            contents.assign(
+                std::istreambuf_iterator<char>(input),
+                std::istreambuf_iterator<char>()
+            );
+
+            return true;
+        };
+
+    for (const auto& relativePath : conflicts) {
+        const fs::path relative =
+            fs::path(relativePath).lexically_normal();
+
+        if (relative.empty() ||
+            relative.is_absolute() ||
+            relative == "." ||
+            relative.string().find("..") != std::string::npos) {
+            return false;
+        }
+
+        std::string oursContents;
+        std::string theirsContents;
+
+        if (!readSnapshotFile(
+                oursSnapshot,
+                relativePath,
+                oursContents
+            )) {
+            return false;
+        }
+
+        if (!readSnapshotFile(
+                theirsSnapshot,
+                relativePath,
+                theirsContents
+            )) {
+            return false;
+        }
+
+        const fs::path destination =
+            repositoryRoot / relative;
+
+        std::error_code ec;
+
+        fs::create_directories(
+            destination.parent_path(),
+            ec
+        );
+
+        if (ec) {
+            return false;
+        }
+
+        std::ofstream output(
+            destination,
+            std::ios::out | std::ios::trunc
+        );
+
+        if (!output) {
+            return false;
+        }
+
+        output << "<<<<<<< ours\n";
+        output << oursContents;
+
+        if (!oursContents.empty() &&
+            oursContents.back() != '\n') {
+            output << '\n';
+        }
+
+        output << "=======\n";
+        output << theirsContents;
+
+        if (!theirsContents.empty() &&
+            theirsContents.back() != '\n') {
+            output << '\n';
+        }
+
+        output << ">>>>>>> theirs\n";
+        output.close();
+
+        if (!output) {
+            return false;
+        }
+    }
+
+    return true;
+}
 
 MergeResult MergeManager::mergeBranch(
     const std::string& sourceBranch
@@ -248,8 +379,21 @@ MergeResult MergeManager::mergeBranch(
             result.conflicts)) {
         result.success = false;
         result.hasConflicts = true;
-        result.message =
-            "Merge stopped because file conflicts were detected.";
+
+        if (!materializeConflictMarkers(
+                ours,
+                theirs,
+                result.conflicts
+            )) {
+            result.message =
+                "Conflicts detected, but conflict markers "
+                "could not be written.";
+        } else {
+            result.message =
+                "Merge stopped because file conflicts were "
+                "detected. Conflict markers were written.";
+        }
+
         return result;
     }
 
