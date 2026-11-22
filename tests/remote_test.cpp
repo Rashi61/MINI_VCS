@@ -11,7 +11,18 @@ static void check(bool cond, const string& what) {
     cout << (cond ? "  PASS  " : "  FAIL  ") << what << "\n";
     if (!cond) failures++;
 }
-static void write(const string& path, const string& text) { ofstream(path) << text; }
+
+static void write(const string& path, const string& text) {
+    fs::create_directories(fs::path(path).parent_path());
+    ofstream(path) << text;
+}
+
+static string readFirstLine(const string& path) {
+    string s;
+    ifstream f(path);
+    getline(f, s);
+    return s;
+}
 
 int main() {
     const string base = "tests/tmp_remote";
@@ -50,9 +61,65 @@ int main() {
     r = rm.push();
     check(!r.ok && r.conflicts == 1, "push reports 1 conflict");
     check(ifstream(remote + "/c2.txt").good(), "remote c2.txt still exists");
-    string content;
-    { ifstream f(remote + "/c2.txt"); getline(f, content); }
-    check(content == "second", "remote c2.txt was NOT overwritten");
+    check(readFirstLine(remote + "/c2.txt") == "second", "remote c2.txt was NOT overwritten");
+
+    cout << "Test 5: nested push (subfolder is auto-created)\n";
+    {
+        const string l = base + "/n5_local", rem = base + "/n5_remote";
+        fs::create_directories(rem);
+        write(l + "/file.txt", "top level");
+        write(l + "/docs/guide.txt", "nested guide");
+        RemoteManager nm(l, rem);
+        check(nm.aheadCount() == 2, "2 files (including nested) are waiting to be pushed");
+        auto nr = nm.push();
+        check(nr.ok && nr.copied == 2, "push sent 2 files");
+        check(fs::exists(rem + "/docs/guide.txt"), "remote/docs/guide.txt was created");
+        check(readFirstLine(rem + "/docs/guide.txt") == "nested guide", "nested file content is correct");
+        check(nm.push().message == "Already up to date", "second nested push says already up to date");
+    }
+
+    cout << "Test 6: nested pull (deeper folders)\n";
+    {
+        const string l = base + "/n6_local", rem = base + "/n6_remote";
+        fs::create_directories(l);
+        write(rem + "/docs/deep/more.txt", "deep file");
+        RemoteManager nm(l, rem);
+        check(nm.behindCount() == 1, "1 nested remote file is waiting to be pulled");
+        auto nr = nm.pull();
+        check(nr.ok && nr.copied == 1, "pull brought 1 file");
+        check(fs::exists(l + "/docs/deep/more.txt"), "local/docs/deep/more.txt was created");
+        check(readFirstLine(l + "/docs/deep/more.txt") == "deep file", "pulled nested content is correct");
+    }
+
+    cout << "Test 7: nested clone\n";
+    {
+        const string l = base + "/n7_local", rem = base + "/n7_remote";
+        fs::create_directories(l);
+        write(rem + "/file.txt", "top level");
+        write(rem + "/docs/guide.txt", "nested guide");
+        RemoteManager nm(l, rem);
+        auto nr = nm.clone();
+        check(nr.ok && nr.copied == 2, "clone copied 2 files");
+        check(fs::exists(l + "/file.txt") && fs::exists(l + "/docs/guide.txt"),
+              "both top-level and nested files exist in local");
+        check(nm.localCount() == 2 && nm.remoteCount() == 2, "local and remote both have 2");
+    }
+
+    cout << "Test 8: nested conflict\n";
+    {
+        const string l = base + "/n8_local", rem = base + "/n8_remote";
+        write(l + "/docs/guide.txt", "local version");
+        write(rem + "/docs/guide.txt", "remote version");
+        RemoteManager nm(l, rem);
+        auto nr = nm.push();
+        check(!nr.ok && nr.conflicts == 1, "push reports 1 nested conflict");
+        check(readFirstLine(rem + "/docs/guide.txt") == "remote version",
+              "remote nested file was NOT overwritten");
+        nr = nm.pull();
+        check(!nr.ok && nr.conflicts == 1, "pull reports 1 nested conflict");
+        check(readFirstLine(l + "/docs/guide.txt") == "local version",
+              "local nested file was NOT overwritten");
+    }
 
     { std::error_code ec; fs::remove_all(base, ec); }
     cout << (failures ? "\nSOME TESTS FAILED\n" : "\nALL TESTS PASSED\n");

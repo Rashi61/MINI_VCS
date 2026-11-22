@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS repositories (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
     owner_id INTEGER NOT NULL,
     visibility TEXT NOT NULL DEFAULT 'private'
         CHECK (visibility IN ('private', 'public')),

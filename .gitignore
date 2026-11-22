@@ -1,4 +1,6 @@
+
 build/
+build-tests/
 cmake-build-*/
 *.exe
 *.obj
@@ -8,15 +10,20 @@ CMakeCache.txt
 CMakeFiles/
 cmake_install.cmake
 Makefile
-.minivcs/
-build/
-build-tests/
-__pycache__/
-.vs/
-# Python compiled files
-*.py[cod]
 
-# Local server database
+.minivcs/
+
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.vs/
+
+.env
+server/config/.env
+
 server/data/*.db
 server/data/*.sqlite
 server/data/*.sqlite3
+
+server-data/

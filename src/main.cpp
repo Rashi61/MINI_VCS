@@ -19,8 +19,9 @@
 #include "branchmanager.h"
 #include "RetentionManager.h"
 #include "member3.h"
-namespace {
+#include "RemoteManager.h"
 
+namespace {
 struct IgnoreRules {
     std::vector<std::string> builtIn;
     std::vector<std::string> userRules;
@@ -134,6 +135,9 @@ int main(int argc, char* argv[]) {
         std::cout<< "  minivcs branches\n";
         std::cout<< "  minivcs switch <name> [--force]\n";
         std::cout<< "  minivcs delete-branch <name>\n";
+        std::cout << "  minivcs remote clone <remote-folder>\n";
+        std::cout << "  minivcs remote push <remote-folder>\n";
+        std::cout << "  minivcs remote pull <remote-folder>\n";
         return 0;
     }
 
@@ -355,8 +359,6 @@ if (command == "auth") {
     return 0;
 }
 
-// ===== Existing Repository Operations =====
-
    const auto discoveredRoot =
     Repository::discoverRoot(std::filesystem::current_path());
 
@@ -370,6 +372,57 @@ if (command == "auth") {
     Repository repository(*discoveredRoot);
 
     FileManager fileManager(repository.getRootPath());
+
+    if (command == "remote") {
+        if (argc != 4) {
+            std::cerr
+                << "Usage: minivcs remote "
+                << "<clone|push|pull> <remote-folder>\n";
+            return 1;
+        }
+
+        const std::string operation = argv[2];
+
+        const std::filesystem::path remotePath =
+            std::filesystem::path(argv[3]);
+
+        const std::filesystem::path localRemotePath =
+            repository.getRootPath();
+
+        RemoteManager remoteManager(
+            localRemotePath.string(),
+            remotePath.string()
+        );
+
+        SyncResult result;
+
+        if (operation == "clone") {
+            result = remoteManager.clone();
+        } else if (operation == "push") {
+            result = remoteManager.push();
+        } else if (operation == "pull") {
+            result = remoteManager.pull();
+        } else {
+            std::cerr
+                << "Unknown remote operation: "
+                << operation << '\n';
+            return 1;
+        }
+
+        std::cout << result.message << '\n';
+
+        if (result.conflicts > 0) {
+            std::cout
+                << "Conflicts: "
+                << result.conflicts << '\n';
+        }
+
+        std::cout
+            << "Files copied: "
+            << result.copied << '\n';
+
+        return result.ok ? 0 : 1;
+    }
     if (command == "commit") {
         if (argc < 3) {
             std::cerr << "Commit message cannot be empty.\n";
@@ -932,12 +985,6 @@ if (command == "auth") {
 
         return 0;
     }
-
-    // ===== Member 3: user / login / permission commands =====
-
-    // ===== Member 4: clone / push / pull commands =====
-
-    
     std::cerr << "Unknown command: " << command << '\n';
     return 1;
 }
