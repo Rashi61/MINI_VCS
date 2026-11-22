@@ -214,9 +214,9 @@ void testConflictingMerge() {
         std::string::npos
     );
 
-    // A failed/conflicting merge must not move the current branch pointer.
     assert(branches.getCurrentCommit() == beforeMerge);
 
+    conflictedFile.close();
     fs::remove_all(root);
 }
 
@@ -244,7 +244,7 @@ void testMissingSourceBranch() {
     fs::remove_all(root);
 }
 
-} // namespace
+}
 
 int main() {
     testCleanMerge();
