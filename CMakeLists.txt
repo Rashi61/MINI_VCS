@@ -106,6 +106,13 @@ if(Python3_Interpreter_FOUND)
     )
 
     add_test(
+        NAME minivcs_merge_cli_tests
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_SOURCE_DIR}/tests/merge_cli_tests.py
+                $<TARGET_FILE:minivcs>
+    )
+
+    add_test(
         NAME minivcs_member1_integrity
         COMMAND ${Python3_EXECUTABLE}
                 ${CMAKE_SOURCE_DIR}/tests/member1_integrity.py

@@ -1,5 +1,11 @@
 # MiniVCS
 
+> **Status update:** merge, the History and Retention pages, the landing page, a
+> production server, security hardening and Docker/Render deployment are now
+> implemented. See [DEPLOY.md](DEPLOY.md) for run, test and deploy instructions.
+> Sections below that call these items "not complete" are historical.
+
+
 MiniVCS is a lightweight version-control system developed as a B.Tech DSCPP-III project. It is designed to demonstrate the core ideas behind repository management, file tracking, commits, snapshots, restoration, branches, metadata storage, authentication, permissions, and future remote-repository support.
 
 The project currently consists of a C++ command-line backend, a local file-system storage layer, SQLite metadata/authentication support, and an initial frontend/remote-repository structure.

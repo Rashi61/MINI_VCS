@@ -73,6 +73,10 @@
 
     <nav class="tabs" aria-label="Screens">
       <a class="tab" href="index.html">
+        Home
+      </a>
+
+      <a class="tab" href="history.html">
         History
       </a>
 
@@ -259,6 +263,44 @@
 
       <p
         id="branchMessage"
+        class="msg"
+        role="status"
+        hidden
+      ></p>
+    </div>
+
+    <h2>Merge branches</h2>
+
+    <div class="panel">
+      <p class="hint">
+        Merge another branch into the branch you are currently on. If the same
+        file was changed differently on both branches, MiniVCS stops and writes
+        conflict markers (&lt;&lt;&lt;&lt;&lt;&lt;&lt; / ======= / &gt;&gt;&gt;&gt;&gt;&gt;&gt;)
+        into the file so you can fix it and commit.
+      </p>
+
+      <p id="currentBranchLabel" class="hint">Current branch: -</p>
+
+      <label for="mergeSourceSelect">
+        Branch to merge into the current branch
+      </label>
+
+      <select id="mergeSourceSelect">
+        <option value="">Select a branch</option>
+      </select>
+
+      <div class="btnrow">
+        <button
+          id="btnMergeBranch"
+          type="button"
+          class="primary"
+        >
+          Merge branch
+        </button>
+      </div>
+
+      <p
+        id="mergeMessage"
         class="msg"
         role="status"
         hidden
@@ -455,6 +497,7 @@
   <script src="js/app.js"></script>
   <script src="js/repository-details.js"></script>
   <script src="js/branches.js"></script>
+  <script src="js/merge.js"></script>
   <script src="js/session.js"></script>
   <script src="js/remote.js"></script>
   <script src="js/collaborators.js?v=1"></script>

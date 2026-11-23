@@ -1,6 +1,7 @@
 import re
 import shutil
 import subprocess
+import threading
 from pathlib import Path
 
 from .config import ServerSettings
@@ -15,6 +16,33 @@ REPOSITORY_NAME_PATTERN = re.compile(
 )
 
 ALLOWED_VISIBILITIES = {"public", "private"}
+
+
+# ---------------------------------------------------------------------------
+# Per-repository locking.
+# Every MiniVCS command for one repository runs one at a time, so two
+# requests can never modify the same working tree concurrently.
+# ---------------------------------------------------------------------------
+_REPOSITORY_LOCKS = {}
+_REPOSITORY_LOCKS_GUARD = threading.Lock()
+
+
+def _lock_for(key):
+    with _REPOSITORY_LOCKS_GUARD:
+        lock = _REPOSITORY_LOCKS.get(key)
+
+        if lock is None:
+            lock = threading.RLock()
+            _REPOSITORY_LOCKS[key] = lock
+
+        return lock
+
+
+def _run_locked(command, **kwargs):
+    key = str(kwargs.get("cwd") or "")
+
+    with _lock_for(key):
+        return subprocess.run(command, **kwargs)
 
 
 class RepositoryServiceError(Exception):
@@ -83,7 +111,7 @@ def _initialize_minivcs_repository(
             "MiniVCS executable was not found. Build the C++ backend first."
         )
 
-    completed = subprocess.run(
+    completed = _run_locked(
         [
             str(executable),
             "init",
@@ -428,6 +456,7 @@ def run_repository_command(
         "status",
         "history",
         "branches",
+        "retention",
     }
 
     if not arguments or arguments[0] not in allowed_commands:
@@ -435,7 +464,7 @@ def run_repository_command(
             "Unsupported repository command."
         )
 
-    completed = subprocess.run(
+    completed = _run_locked(
         [
             str(executable),
             *arguments,
@@ -533,6 +562,8 @@ def run_repository_write_command(
         "commit",
         "branch",
         "switch",
+        "merge",
+        "retention",
     }
 
     if not arguments or arguments[0] not in allowed_commands:
@@ -540,7 +571,7 @@ def run_repository_write_command(
             "Unsupported repository command."
         )
 
-    completed = subprocess.run(
+    completed = _run_locked(
         [
             str(executable),
             *arguments,
@@ -678,7 +709,7 @@ def save_and_stage_file(
             "MiniVCS executable was not found."
         )
 
-    completed = subprocess.run(
+    completed = _run_locked(
         [
             str(executable),
             "add",
@@ -797,7 +828,7 @@ def run_remote_operation(
             "MiniVCS executable was not found."
         )
 
-    completed = subprocess.run(
+    completed = _run_locked(
         [
             str(executable),
             "remote",
@@ -1443,3 +1474,196 @@ def remove_repository_member(
 
     finally:
         connection.close()
+
+# ---------------------------------------------------------------------------
+# Merge, retention and structured history
+# ---------------------------------------------------------------------------
+BRANCH_NAME_PATTERN = re.compile(
+    r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+)
+
+MIN_RETENTION_DAYS = 1
+MAX_RETENTION_DAYS = 3650
+
+_HISTORY_KEYS = {
+    "commit": "id",
+    "message": "message",
+    "date": "date",
+    "parent": "parent",
+}
+
+_RETENTION_HEADER = re.compile(
+    r"^Retention:\s*(\d+)\s+days?",
+    re.IGNORECASE,
+)
+
+_RETENTION_LINE = re.compile(
+    r"^\s+([0-9a-fA-F]{6,64})\s+"
+    r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2})\s+"
+    r"(-?\d+)d\s+(.+?)\s*$"
+)
+
+
+def validate_branch_name(name) -> str:
+    if not isinstance(name, str):
+        raise RepositoryServiceError(
+            "Branch name must be text."
+        )
+
+    normalized = name.strip()
+
+    if not BRANCH_NAME_PATTERN.fullmatch(normalized) or ".." in normalized:
+        raise RepositoryServiceError(
+            "Branch name may only contain letters, numbers, dots, "
+            "dashes and underscores (maximum 64 characters)."
+        )
+
+    return normalized
+
+
+def validate_retention_days(days) -> int:
+    try:
+        value = int(days)
+    except (TypeError, ValueError):
+        raise RepositoryServiceError(
+            "Retention days must be a whole number."
+        )
+
+    if value < MIN_RETENTION_DAYS or value > MAX_RETENTION_DAYS:
+        raise RepositoryServiceError(
+            f"Retention days must be between {MIN_RETENTION_DAYS} "
+            f"and {MAX_RETENTION_DAYS}."
+        )
+
+    return value
+
+
+def parse_history_output(text: str) -> list:
+    commits = []
+    current = {}
+
+    for line in (text or "").splitlines():
+        if not line.strip():
+            if current:
+                commits.append(current)
+                current = {}
+            continue
+
+        key, separator, value = line.partition(":")
+
+        if not separator:
+            continue
+
+        mapped = _HISTORY_KEYS.get(key.strip().lower())
+
+        if mapped is None:
+            continue
+
+        value = value.strip()
+
+        if mapped == "id" and current:
+            commits.append(current)
+            current = {}
+
+        current[mapped] = value
+
+    if current:
+        commits.append(current)
+
+    for commit in commits:
+        parent = commit.get("parent", "")
+        commit["parent"] = None if parent in {"", "none"} else parent
+
+    return commits
+
+
+def parse_retention_output(text: str) -> dict:
+    days = None
+    snapshots = []
+
+    for line in (text or "").splitlines():
+        header = _RETENTION_HEADER.match(line.strip())
+
+        if header:
+            days = int(header.group(1))
+            continue
+
+        match = _RETENTION_LINE.match(line)
+
+        if match:
+            age = int(match.group(3))
+            snapshots.append(
+                {
+                    "id": match.group(1),
+                    "date": match.group(2),
+                    "age_days": age,
+                    "result": match.group(4),
+                }
+            )
+
+    return {
+        "days": days,
+        "snapshots": snapshots,
+        "raw": text or "",
+    }
+
+
+def get_structured_history(settings, repository_id, user_id) -> dict:
+    result = run_repository_command(
+        settings,
+        repository_id,
+        ["history"],
+        user_id,
+    )
+
+    return {
+        "repository": result["repository"],
+        "commits": parse_history_output(result["output"]),
+    }
+
+
+def get_retention_status(settings, repository_id, user_id) -> dict:
+    result = run_repository_command(
+        settings,
+        repository_id,
+        ["retention", "status"],
+        user_id,
+    )
+
+    parsed = parse_retention_output(result["output"])
+    parsed["repository"] = result["repository"]
+    return parsed
+
+
+def set_retention_days(settings, repository_id, days, user_id) -> dict:
+    value = validate_retention_days(days)
+
+    return run_repository_write_command(
+        settings,
+        repository_id,
+        ["retention", "set", str(value)],
+        user_id,
+        "change_settings",
+    )
+
+
+def run_retention_cleanup(settings, repository_id, user_id) -> dict:
+    return run_repository_write_command(
+        settings,
+        repository_id,
+        ["retention", "cleanup"],
+        user_id,
+        "change_settings",
+    )
+
+
+def merge_branch(settings, repository_id, source_branch, user_id) -> dict:
+    branch = validate_branch_name(source_branch)
+
+    return run_repository_write_command(
+        settings,
+        repository_id,
+        ["merge", branch],
+        user_id,
+        "push",
+    )

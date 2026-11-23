@@ -17,10 +17,17 @@ TEST_ROOT = Path(
 TEST_DATABASE = TEST_ROOT / "api-test.db"
 TEST_REPOSITORIES = TEST_ROOT / "repositories"
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-TEST_EXECUTABLE = (
-    PROJECT_ROOT / "build" / "Debug" / "minivcs.exe"
-)
+_configured_executable = os.environ.get("MINIVCS_EXECUTABLE")
 
+if _configured_executable:
+    TEST_EXECUTABLE = Path(_configured_executable)
+else:
+    from server.app.config import load_settings as _load_settings
+
+    TEST_EXECUTABLE = _load_settings().minivcs_executable
+
+os.environ["MINIVCS_REGISTER_MAX_ATTEMPTS"] = "100000"
+os.environ["MINIVCS_LOGIN_MAX_ATTEMPTS"] = "100000"
 os.environ["MINIVCS_DATABASE_PATH"] = str(
     TEST_DATABASE
 )

@@ -1,6 +1,8 @@
 "use strict";
 
-const API_BASE_URL = "http://127.0.0.1:8000";
+// Same-origin by default (the Flask server also serves this frontend).
+// To use a separate API host, set window.MINIVCS_API_BASE_URL before this script loads.
+const API_BASE_URL = (typeof window !== "undefined" && window.MINIVCS_API_BASE_URL) || "";
 
 const SESSION_TOKEN_KEY =
   "minivcs_session_token";
@@ -67,9 +69,8 @@ async function apiRequest(
     );
   } catch (error) {
     throw new Error(
-      "Could not connect to the Flask API. " +
-      "Make sure Flask is running at " +
-      `${API_BASE_URL}.`
+      "Could not connect to the MiniVCS server. " +
+      "Check your internet connection and that the server is running."
     );
   }
 
@@ -92,8 +93,7 @@ async function apiRequest(
       throw new Error(
         "The server returned HTML instead of JSON. " +
         `Request URL: ${requestUrl}. ` +
-        "Check that the request is sent to Flask " +
-        "on port 8000, not the frontend server on port 5500."
+        "Check that the page is opened from the MiniVCS server address."
       );
     }
 

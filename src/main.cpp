@@ -17,6 +17,7 @@
 #include "DiffManager.h"
 #include "IntegrityManager.h"
 #include "branchmanager.h"
+#include "MergeManager.h"
 #include "RetentionManager.h"
 #include "member3.h"
 #include "RemoteManager.h"
@@ -135,6 +136,7 @@ int main(int argc, char* argv[]) {
         std::cout<< "  minivcs branches\n";
         std::cout<< "  minivcs switch <name> [--force]\n";
         std::cout<< "  minivcs delete-branch <name>\n";
+        std::cout << "  minivcs merge <branch>\n";
         std::cout << "  minivcs remote clone <remote-folder>\n";
         std::cout << "  minivcs remote push <remote-folder>\n";
         std::cout << "  minivcs remote pull <remote-folder>\n";
@@ -452,9 +454,7 @@ if (command == "auth") {
         CommitManager commitManager(repository.getRootPath());
 
         if (commitManager.createCommit(message)) {
-            std::cout << "Commit created successfully!\n";
-            std::cout << "Commit ID: "
-                    << commitManager.getLatestCommitId() << '\n';
+            // CommitManager already prints the success message and ID.
             return 0;
         }
 
@@ -985,6 +985,36 @@ if (command == "auth") {
 
         return 0;
     }
+    if (command == "merge") {
+        if (argc != 3) {
+            std::cerr << "Usage: minivcs merge <branch>\n";
+            return 1;
+        }
+
+        MergeManager mergeManager(repository.getRootPath());
+        const MergeResult result = mergeManager.mergeBranch(argv[2]);
+
+        if (!result.message.empty()) {
+            if (result.success) {
+                std::cout << result.message << '\n';
+            } else {
+                std::cerr << result.message << '\n';
+            }
+        }
+
+        if (result.hasConflicts) {
+            std::cerr << "Merge conflicts in "
+                      << result.conflicts.size() << " file(s):\n";
+            for (const auto& file : result.conflicts) {
+                std::cerr << "  CONFLICT: " << file << '\n';
+            }
+            std::cerr << "Resolve the conflict markers, then run "
+                         "'minivcs add <file>' and 'minivcs commit'.\n";
+        }
+
+        return result.success ? 0 : 1;
+    }
+
     std::cerr << "Unknown command: " << command << '\n';
     return 1;
 }

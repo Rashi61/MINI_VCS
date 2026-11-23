@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: sudo apt-get update && sudo apt-get install -y cmake libssl-dev
+
+      - name: Build C++ backend
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build -j2
+
+      - name: C++ and CLI tests
+        run: ctest --test-dir build --output-on-failure
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Server tests
+        env:
+          MINIVCS_EXECUTABLE: ${{ github.workspace }}/build/minivcs
+        run: |
+          pip install -r server/requirements.txt
+          python -m unittest server.tests.test_auth server.tests.test_permissions \
+            server.tests.test_repository_service server.tests.test_api \
+            server.tests.test_extras -v

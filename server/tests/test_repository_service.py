@@ -9,7 +9,7 @@ from server.app.repository_service import (
     create_repository,
     list_repositories,
 )
-from server.app.config import ServerSettings
+from server.app.config import ServerSettings, load_settings
 
 
 class RepositoryServiceTests(unittest.TestCase):
@@ -28,10 +28,9 @@ class RepositoryServiceTests(unittest.TestCase):
             self.temp_dir / "repositories"
         )
 
-        self.executable = Path(
-            r"C:\Users\avnis\Documents\MiniVCS"
-            r"\build\Debug\minivcs.exe"
-        )
+        # Uses MINIVCS_EXECUTABLE if set, otherwise the default build output
+        # (works on Windows, Linux and macOS).
+        self.executable = load_settings().minivcs_executable
 
         self.settings = ServerSettings(
             host="127.0.0.1",

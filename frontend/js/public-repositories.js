@@ -1,7 +1,7 @@
 "use strict";
 
 const API_BASE =
-  "http://127.0.0.1:8000";
+  (typeof window !== "undefined" && window.MINIVCS_API_BASE_URL) || "";
 
 let selectedPublicRepositoryId =
   null;

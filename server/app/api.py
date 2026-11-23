@@ -1,6 +1,9 @@
+import os
 from functools import wraps
 
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_from_directory
+from werkzeug.exceptions import HTTPException
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from .auth import (
     login_user,
@@ -18,6 +21,11 @@ from .repository_service import (
     add_repository_member,
     create_repository,
     get_repository,
+    get_retention_status,
+    get_structured_history,
+    merge_branch,
+    run_retention_cleanup,
+    set_retention_days,
     list_public_repository_files,
     list_repository_members,
     list_repositories,
@@ -31,6 +39,8 @@ from .repository_service import (
     user_can_view_repository,
 )
 from flask_cors import CORS
+
+from .security import RateLimiter, apply_security_headers
 
 def success(message, data=None, status=200):
     return jsonify(
@@ -119,14 +129,41 @@ def repository_error_status(error):
 
     return 400
 
+def _service_status(error, default=400):
+    message = str(error).lower()
+
+    if "permission" in message:
+        return 403
+
+    if "not found" in message or "missing" in message:
+        return 404
+
+    if "conflict" in message:
+        return 409
+
+    return default
+
+
 def create_app() -> Flask:
-    app = Flask(__name__)
-    app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024
     settings = load_settings()
+
+    app = Flask(__name__, static_folder=None)
+    app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024
+
+    if os.getenv("MINIVCS_TRUST_PROXY", "").strip().lower() in {
+        "1", "true", "yes", "on",
+    }:
+        # Render, Railway and similar hosts terminate HTTPS in front of us.
+        app.wsgi_app = ProxyFix(
+            app.wsgi_app,
+            x_for=1,
+            x_proto=1,
+            x_host=1,
+        )
 
     CORS(
         app,
-        origins=[settings.frontend_origin],
+        origins=list(settings.allowed_origins),
         supports_credentials=False,
         allow_headers=["Content-Type", "Authorization"],
         methods=["GET",
@@ -137,6 +174,53 @@ def create_app() -> Flask:
     )
 
     app.config["MINIVCS_SETTINGS"] = settings
+
+    login_limiter = RateLimiter(
+        settings.login_max_attempts,
+        settings.login_window_seconds,
+    )
+    register_limiter = RateLimiter(
+        settings.register_max_attempts,
+        settings.register_window_seconds,
+    )
+
+    @app.after_request
+    def add_security_headers(response):
+        return apply_security_headers(
+            response,
+            secure_transport=request.is_secure,
+        )
+
+    @app.errorhandler(HTTPException)
+    def handle_http_error(error):
+        if request.path.startswith("/api/"):
+            if error.code == 413:
+                return failure(
+                    "The request is too large (10 MB limit).",
+                    "REQUEST_TOO_LARGE",
+                    413,
+                )
+
+            return failure(
+                error.description or "Request failed.",
+                "HTTP_ERROR",
+                error.code or 500,
+            )
+
+        return error
+
+    @app.errorhandler(Exception)
+    def handle_unexpected_error(error):
+        app.logger.exception("Unhandled server error")
+
+        if request.path.startswith("/api/"):
+            return failure(
+                "Unexpected server error.",
+                "INTERNAL_ERROR",
+                500,
+            )
+
+        return "Internal server error", 500
 
     initialize_database()
 
@@ -166,6 +250,17 @@ def create_app() -> Flask:
     def register():
         payload = request.get_json(silent=True) or {}
 
+        register_key = request.remote_addr or "unknown"
+
+        if register_limiter.is_blocked(register_key):
+            return failure(
+                "Too many registration attempts. Try again later.",
+                "RATE_LIMITED",
+                429,
+            )
+
+        register_limiter.register_failure(register_key)
+
         try:
             user_id = register_user(
                 payload.get("username", ""),
@@ -192,11 +287,27 @@ def create_app() -> Flask:
     def login():
         payload = request.get_json(silent=True) or {}
 
+        login_name = str(payload.get("username", "")).strip().lower()
+        login_key = f"{request.remote_addr or 'unknown'}:{login_name}"
+
+        if login_limiter.is_blocked(login_key):
+            response, status = failure(
+                "Too many failed login attempts. Try again later.",
+                "RATE_LIMITED",
+                429,
+            )
+            response.headers["Retry-After"] = str(
+                login_limiter.retry_after(login_key)
+            )
+            return response, status
+
         try:
             result = login_user(
                 payload.get("username", ""),
                 payload.get("password", ""),
             )
+
+            login_limiter.reset(login_key)
 
             return success(
                 "Login successful.",
@@ -204,6 +315,8 @@ def create_app() -> Flask:
             )
 
         except ValueError as error:
+            login_limiter.register_failure(login_key)
+
             return failure(
                 str(error),
                 "LOGIN_ERROR",
@@ -477,6 +590,134 @@ def create_app() -> Flask:
                 "REPOSITORY_HISTORY_ERROR",
                 status,
             )
+    @app.get(
+        "/api/repositories/<int:repository_id>/commits"
+    )
+    def repository_commits(repository_id):
+        try:
+            data = get_structured_history(
+                settings,
+                repository_id,
+                current_user_id(),
+            )
+
+            return success("Commit history loaded.", data)
+
+        except RepositoryServiceError as error:
+            return failure(
+                str(error),
+                "REPOSITORY_COMMITS_ERROR",
+                _service_status(error, 404),
+            )
+
+    @app.get(
+        "/api/repositories/<int:repository_id>/retention"
+    )
+    def repository_retention(repository_id):
+        try:
+            data = get_retention_status(
+                settings,
+                repository_id,
+                current_user_id(),
+            )
+
+            return success("Retention status loaded.", data)
+
+        except RepositoryServiceError as error:
+            return failure(
+                str(error),
+                "RETENTION_STATUS_ERROR",
+                _service_status(error, 404),
+            )
+
+    @app.post(
+        "/api/repositories/<int:repository_id>/retention"
+    )
+    @require_login
+    def update_repository_retention(user_id, repository_id):
+        payload = request.get_json(silent=True) or {}
+
+        try:
+            set_retention_days(
+                settings,
+                repository_id,
+                payload.get("days"),
+                user_id,
+            )
+
+            data = get_retention_status(
+                settings,
+                repository_id,
+                user_id,
+            )
+
+            return success("Retention period saved.", data)
+
+        except RepositoryServiceError as error:
+            return failure(
+                str(error),
+                "RETENTION_UPDATE_ERROR",
+                _service_status(error),
+            )
+
+    @app.post(
+        "/api/repositories/<int:repository_id>/retention/cleanup"
+    )
+    @require_login
+    def repository_retention_cleanup(user_id, repository_id):
+        try:
+            result = run_retention_cleanup(
+                settings,
+                repository_id,
+                user_id,
+            )
+
+            data = get_retention_status(
+                settings,
+                repository_id,
+                user_id,
+            )
+            data["output"] = result["output"]
+
+            return success("Retention cleanup finished.", data)
+
+        except RepositoryServiceError as error:
+            return failure(
+                str(error),
+                "RETENTION_CLEANUP_ERROR",
+                _service_status(error),
+            )
+
+    @app.post(
+        "/api/repositories/<int:repository_id>/merge"
+    )
+    @require_login
+    def merge_repository_branch(user_id, repository_id):
+        payload = request.get_json(silent=True) or {}
+
+        try:
+            result = merge_branch(
+                settings,
+                repository_id,
+                payload.get("source", payload.get("name", "")),
+                user_id,
+            )
+
+            return success(
+                "Merge completed.",
+                {
+                    "repository": result["repository"],
+                    "output": result["output"],
+                },
+            )
+
+        except RepositoryServiceError as error:
+            return failure(
+                str(error),
+                "MERGE_ERROR",
+                _service_status(error),
+            )
+
     @app.get(
         "/api/repositories/<int:repository_id>/branches"
     )
@@ -1120,4 +1361,17 @@ def create_app() -> Flask:
                 repository_error_status(error),
             )
    
+    frontend_dir = settings.frontend_dir
+
+    @app.get("/")
+    def home_page():
+        return send_from_directory(frontend_dir, "index.html")
+
+    @app.get("/<path:filename>")
+    def frontend_file(filename):
+        if filename.startswith("api/"):
+            return failure("Not found.", "NOT_FOUND", 404)
+
+        return send_from_directory(frontend_dir, filename)
+
     return app

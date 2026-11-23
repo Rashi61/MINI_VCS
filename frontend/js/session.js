@@ -10,7 +10,7 @@ logoutButton?.addEventListener(
 
     if (token) {
       await fetch(
-        "http://127.0.0.1:8000/api/auth/logout",
+        `${window.API_BASE_URL || ""}/api/auth/logout`,
         {
           method: "POST",
           headers: {

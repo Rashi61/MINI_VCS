@@ -37,6 +37,12 @@ private:
         std::unordered_map<std::string, std::string>& mergedHashes,
         std::vector<std::string>& conflicts
     ) const;
+    bool applyMergedFilesToWorkingTree(
+        const Commit& ours,
+        const Commit& theirs,
+        const std::unordered_map<std::string, std::string>& mergedHashes,
+        std::string& errorMessage
+    ) const;
     bool materializeConflictMarkers(
         const Commit& ours,
         const Commit& theirs,

@@ -1,0 +1,14 @@
+.git
+.github
+build/
+build-tests/
+cmake-build-*/
+server-data/
+**/__pycache__/
+*.pyc
+.venv/
+venv/
+.vs/
+.env
+docs/*.pdf
+node_modules/

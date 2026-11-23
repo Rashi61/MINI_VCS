@@ -21,6 +21,13 @@ def configured_database_path():
     if configured:
         return Path(configured).resolve()
 
+    # Same rule as server.app.config: MINIVCS_DATA_DIR holds every
+    # persistent file (database, repositories, remotes).
+    data_dir = os.getenv("MINIVCS_DATA_DIR")
+
+    if data_dir:
+        return (Path(data_dir) / "server.db").resolve()
+
     return DEFAULT_DB_PATH.resolve()
 
 

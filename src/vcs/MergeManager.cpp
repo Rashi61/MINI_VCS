@@ -3,6 +3,7 @@
 #include "Commit.h"
 #include "CommitManager.h"
 #include "branchmanager.h"
+#include "HashManager.h"
 
 #include <queue>
 #include <unordered_set>
@@ -173,6 +174,143 @@ bool MergeManager::buildThreeWayMerge(
 
     return conflicts.empty();
 }
+bool MergeManager::applyMergedFilesToWorkingTree(
+    const Commit& ours,
+    const Commit& theirs,
+    const std::unordered_map<std::string, std::string>& mergedHashes,
+    std::string& errorMessage
+) const {
+    namespace fs = std::filesystem;
+
+    CommitManager commitManager(repositoryRoot);
+
+    const fs::path oursSnapshot =
+        commitManager.getSnapshotPath(ours.getId());
+    const fs::path theirsSnapshot =
+        commitManager.getSnapshotPath(theirs.getId());
+
+    struct Action {
+        fs::path relative;
+        fs::path source;   // empty means "delete from working tree"
+    };
+
+    std::vector<Action> actions;
+
+    auto safeRelative = [](const std::string& value, fs::path& out) {
+        out = fs::path(value).lexically_normal();
+        return !(out.empty() || out.is_absolute() || out == "." ||
+                 out.string().find("..") != std::string::npos);
+    };
+
+    // Files that must be written because the merged result differs from ours.
+    for (const auto& entry : mergedHashes) {
+        const auto oursIt = ours.getFileHashes().find(entry.first);
+
+        if (oursIt != ours.getFileHashes().end() &&
+            oursIt->second == entry.second) {
+            continue;  // working tree already matches our side
+        }
+
+        fs::path relative;
+        if (!safeRelative(entry.first, relative)) {
+            errorMessage = "Unsafe path in merge result: " + entry.first;
+            return false;
+        }
+
+        actions.push_back({relative, theirsSnapshot / relative});
+    }
+
+    // Files deleted by the other branch.
+    for (const auto& entry : ours.getFileHashes()) {
+        if (mergedHashes.find(entry.first) != mergedHashes.end()) {
+            continue;
+        }
+
+        fs::path relative;
+        if (!safeRelative(entry.first, relative)) {
+            errorMessage = "Unsafe path in merge result: " + entry.first;
+            return false;
+        }
+
+        actions.push_back({relative, fs::path()});
+    }
+
+    // Refuse to overwrite uncommitted local edits. A file is safe to replace
+    // when it matches our committed version, or already equals the merged
+    // content (for example, a file left behind by an earlier branch switch).
+    for (const auto& action : actions) {
+        const fs::path target = repositoryRoot / action.relative;
+        const std::string key = action.relative.generic_string();
+        std::error_code ec;
+
+        if (!fs::exists(target, ec)) {
+            continue;
+        }
+
+        std::string currentHash;
+        if (!HashManager::tryCalculateHash(target, currentHash)) {
+            errorMessage = "Could not read working file: " + key;
+            return false;
+        }
+
+        const auto oursIt = ours.getFileHashes().find(key);
+        const auto mergedIt = mergedHashes.find(key);
+
+        const bool matchesOurs =
+            oursIt != ours.getFileHashes().end() &&
+            currentHash == oursIt->second;
+
+        const bool matchesMerged =
+            mergedIt != mergedHashes.end() &&
+            currentHash == mergedIt->second;
+
+        if (!matchesOurs && !matchesMerged) {
+            errorMessage =
+                "Local changes in '" + key +
+                "' would be overwritten by the merge. "
+                "Commit or restore them first.";
+            return false;
+        }
+    }
+
+    for (const auto& action : actions) {
+        const fs::path target = repositoryRoot / action.relative;
+        std::error_code ec;
+
+        if (action.source.empty()) {
+            fs::remove(target, ec);
+            if (ec) {
+                errorMessage = "Could not remove file: " +
+                               action.relative.generic_string();
+                return false;
+            }
+            continue;
+        }
+
+        fs::create_directories(target.parent_path(), ec);
+        if (ec) {
+            errorMessage = "Could not create directory for: " +
+                           action.relative.generic_string();
+            return false;
+        }
+
+        fs::copy_file(
+            action.source,
+            target,
+            fs::copy_options::overwrite_existing,
+            ec
+        );
+
+        if (ec) {
+            errorMessage = "Could not write merged file: " +
+                           action.relative.generic_string();
+            return false;
+        }
+    }
+
+    return true;
+}
+
 bool MergeManager::materializeConflictMarkers(
     const Commit& ours,
     const Commit& theirs,
@@ -400,6 +538,18 @@ MergeResult MergeManager::mergeBranch(
     if (mergedHashes.empty()) {
         result.message =
             "Merge produced no files.";
+        return result;
+    }
+
+    std::string applyError;
+
+    if (!applyMergedFilesToWorkingTree(
+            ours,
+            theirs,
+            mergedHashes,
+            applyError
+        )) {
+        result.message = applyError;
         return result;
     }
 

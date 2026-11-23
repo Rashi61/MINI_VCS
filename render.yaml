@@ -1,0 +1,21 @@
+# Render Blueprint: https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: minivcs
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: MINIVCS_TRUST_PROXY
+        value: "true"
+      - key: MINIVCS_DATA_DIR
+        value: /data
+    # Free web services have an EPHEMERAL disk: users, repositories and
+    # commits are lost whenever the service restarts or redeploys.
+    # For permanent data upgrade the plan and uncomment:
+    # disk:
+    #   name: minivcs-data
+    #   mountPath: /data
+    #   sizeGB: 1
