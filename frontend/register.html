@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MiniVCS - Register</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="top">
+    <h1>MiniVCS</h1>
+  </header>
+
+  <main>
+    <h2>Create account</h2>
+
+    <div class="panel">
+      <label for="username">Username</label>
+      <input id="username" autocomplete="username">
+
+      <label for="email">Email</label>
+      <input id="email" type="email" autocomplete="email">
+
+      <label for="password">Password</label>
+      <input id="password" type="password" autocomplete="new-password">
+
+      <div class="btnrow">
+        <button id="btnRegister" class="primary">
+          Register
+        </button>
+      </div>
+
+      <p id="registerMessage" class="msg" role="status" hidden></p>
+    </div>
+
+    <p>
+      Already registered?
+      <a href="login.html">Login here</a>
+    </p>
+  </main>
+
+  <script src="js/api.js"></script>
+  <script src="js/register.js"></script>
+</body>
+</html>

@@ -2,50 +2,504 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1"
+  >
   <title>MiniVCS - Repositories</title>
   <link rel="stylesheet" href="css/style.css">
+
+  <style>
+    .header-actions {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .button {
+      display: inline-block;
+      box-sizing: border-box;
+      padding: 9px 14px;
+      border: 1px solid #1f6feb;
+      border-radius: 6px;
+      background: #1f6feb;
+      color: #ffffff;
+      font-weight: 600;
+      text-decoration: none;
+      cursor: pointer;
+    }
+
+    .button:hover {
+      background: #1158c7;
+      color: #ffffff;
+      text-decoration: none;
+    }
+
+    .button.secondary {
+      border-color: #d0d7de;
+      background: #f6f8fa;
+      color: #24292f;
+    }
+
+    .button.secondary:hover {
+      background: #eaeef2;
+      color: #24292f;
+    }
+
+    .repository-description {
+      width: 100%;
+      box-sizing: border-box;
+      min-height: 90px;
+      padding: 10px;
+      border: 1px solid #d0d7de;
+      border-radius: 6px;
+      resize: vertical;
+      font: inherit;
+    }
+
+    .field-help {
+      display: block;
+      margin-top: 4px;
+      color: #57606a;
+      font-size: 0.9rem;
+    }
+  </style>
 </head>
+
 <body>
   <header class="top">
     <h1>MiniVCS</h1>
+
     <nav class="tabs" aria-label="Screens">
-      <a class="tab" href="index.html">History</a>
-      <a class="tab active" href="repositories.html">Repositories</a>
-      <a class="tab" href="retention.html">Retention</a>
+      <a class="tab" href="index.html">
+        Home
+      </a>
+
+      <a class="tab" href="history.html">
+        History
+      </a>
+
+      <a
+        class="tab active"
+        href="repositories.html"
+      >
+        Repositories
+      </a>
+
+      <a class="tab" href="retention.html">
+        Retention
+      </a>
+
+      <a
+        href="public-repositories.html"
+        class="button secondary"
+      >
+        Browse public repositories
+      </a>
     </nav>
+
+    <button
+      id="btnLogout"
+      type="button"
+    >
+      Logout
+    </button>
   </header>
+
   <main>
-    <p id="msg" class="msg" role="status" hidden></p>
-    <h2>Remote repository</h2>
+    <p
+      id="msg"
+      class="msg"
+      role="status"
+      hidden
+    ></p>
+
+    <h2>Create repository</h2>
+
     <div class="panel">
-      <label for="remotePath">Remote folder</label>
-      <input id="remotePath" value="remote/" readonly>
+      <label for="repositoryName">
+        Repository name
+      </label>
+
+      <input
+        id="repositoryName"
+        name="name"
+        type="text"
+        placeholder="Example: my-project"
+        maxlength="64"
+        required
+      >
+
+      <label for="repositoryDescription">
+        Description
+      </label>
+
+      <textarea
+        id="repositoryDescription"
+        name="description"
+        class="repository-description"
+        rows="3"
+        maxlength="500"
+        placeholder="Briefly describe this repository"
+      ></textarea>
+
+      <small class="field-help">
+        Optional. Maximum 500 characters.
+      </small>
+
+      <label for="RepositoryVisibility">
+        Visibility
+      </label>
+
+      <select
+        id="RepositoryVisibility"
+        name="visibility"
+      >
+        <option value="private">
+          Private
+        </option>
+
+        <option value="public">
+          Public
+        </option>
+      </select>
+
       <div class="btnrow">
-        <button id="btnClone">Clone</button>
-        <button id="btnPush" class="primary">Push</button>
-        <button id="btnPull">Pull</button>
+        <button
+          id="btnCreateRepository"
+          type="button"
+          class="primary"
+        >
+          Create repository
+        </button>
+      </div>
+
+      <p
+        id="createRepositoryMessage"
+        class="msg"
+        role="status"
+        hidden
+      ></p>
+    </div>
+
+    <h2>Your repositories</h2>
+
+    <div class="panel">
+      <button
+        id="btnRefreshRepositories"
+        type="button"
+      >
+        Refresh repositories
+      </button>
+
+      <p
+        id="repositoryListMessage"
+        class="msg"
+        role="status"
+        hidden
+      ></p>
+
+      <label for="repositorySelect">
+        Select repository
+      </label>
+
+      <select id="repositorySelect">
+        <option value="">
+          Select a repository
+        </option>
+      </select>
+
+      <p
+        id="selectedRepositoryDescription"
+        class="msg"
+      >
+        Select a repository to view its description.
+      </p>
+    </div>
+
+    <h2>Branches</h2>
+
+    <div class="panel">
+      <label for="branchSelect">
+        Available branches
+      </label>
+
+      <select id="branchSelect">
+        <option value="">
+          Select a branch
+        </option>
+      </select>
+
+      <div class="btnrow">
+        <button
+          id="btnSwitchBranch"
+          type="button"
+        >
+          Switch branch
+        </button>
+      </div>
+
+      <label for="newBranchName">
+        New branch name
+      </label>
+
+      <input
+        id="newBranchName"
+        type="text"
+        placeholder="Example: feature-login"
+        maxlength="64"
+      >
+
+      <div class="btnrow">
+        <button
+          id="btnCreateBranch"
+          type="button"
+          class="primary"
+        >
+          Create branch
+        </button>
+      </div>
+
+      <p
+        id="branchMessage"
+        class="msg"
+        role="status"
+        hidden
+      ></p>
+    </div>
+
+    <h2>Merge branches</h2>
+
+    <div class="panel">
+      <p class="hint">
+        Merge another branch into the branch you are currently on. If the same
+        file was changed differently on both branches, MiniVCS stops and writes
+        conflict markers (&lt;&lt;&lt;&lt;&lt;&lt;&lt; / ======= / &gt;&gt;&gt;&gt;&gt;&gt;&gt;)
+        into the file so you can fix it and commit.
+      </p>
+
+      <p id="currentBranchLabel" class="hint">Current branch: -</p>
+
+      <label for="mergeSourceSelect">
+        Branch to merge into the current branch
+      </label>
+
+      <select id="mergeSourceSelect">
+        <option value="">Select a branch</option>
+      </select>
+
+      <div class="btnrow">
+        <button
+          id="btnMergeBranch"
+          type="button"
+          class="primary"
+        >
+          Merge branch
+        </button>
+      </div>
+
+      <p
+        id="mergeMessage"
+        class="msg"
+        role="status"
+        hidden
+      ></p>
+    </div>
+
+    <h2>Upload and commit a file</h2>
+
+    <div class="panel">
+      <label for="repositoryId">
+        Selected Repository ID
+      </label>
+
+      <input
+        id="repositoryId"
+        type="number"
+        min="1"
+        placeholder="Example: 1"
+      >
+
+      <label for="filePath">
+        Repository file path
+      </label>
+
+      <input
+        id="filePath"
+        type="text"
+        placeholder="Example: docs/readme.txt"
+      >
+
+      <label for="fileInput">
+        Select file
+      </label>
+
+      <input
+        id="fileInput"
+        type="file"
+      >
+
+      <div class="btnrow">
+        <button
+          id="btnUpload"
+          type="button"
+          class="primary"
+        >
+          Upload and stage
+        </button>
+      </div>
+
+      <label for="commitMessage">
+        Commit message
+      </label>
+
+      <input
+        id="commitMessage"
+        type="text"
+        placeholder="Describe this change"
+      >
+
+      <div class="btnrow">
+        <button
+          id="btnCreateCommit"
+          type="button"
+          class="primary"
+        >
+          Create commit
+        </button>
       </div>
     </div>
 
-    <div class="stats">
-      <div class="stat"><span class="k">Local snapshots</span><span class="v" id="statLocal">0</span></div>
-      <div class="stat"><span class="k">Remote snapshots</span><span class="v" id="statRemote">0</span></div>
-      <div class="stat"><span class="k">Waiting to push</span><span class="v" id="statAhead">0</span></div>
-      <div class="stat"><span class="k">Waiting to pull</span><span class="v" id="statBehind">0</span></div>
+    <h2>Repository information</h2>
+
+    <div class="panel">
+      <div class="btnrow">
+        <button
+          id="btnRefreshDetails"
+          type="button"
+        >
+          Refresh status and history
+        </button>
+      </div>
+
+      <p
+        id="detailsMessage"
+        class="msg"
+        role="status"
+        hidden
+      ></p>
+
+      <h3>Status</h3>
+
+      <pre
+        id="repositoryStatus"
+        class="output-box"
+      >Select a repository to view status.</pre>
+
+      <h3>History</h3>
+
+      <pre
+        id="repositoryHistory"
+        class="output-box"
+      >Select a repository to view history.</pre>
     </div>
 
-    <h3>Create test snapshot</h3>
+    <h2>Remote repository</h2>
+
     <div class="panel">
-      <label for="cMsg">Message</label>
-      <input id="cMsg" placeholder="Add login page">
-      <label for="cContent">File content</label>
-      <textarea id="cContent" rows="3" placeholder="Text saved in this snapshot"></textarea>
-      <label for="cAge">Age in days (to test retention)</label>
-      <input id="cAge" type="number" min="0" value="0">
-      <div class="btnrow"><button id="btnCommit" class="primary">Save snapshot</button></div>
+      <p>
+        This repository uses the configured server remote.
+      </p>
+
+      <div class="btnrow">
+        <button
+          id="btnClone"
+          type="button"
+        >
+          Clone
+        </button>
+
+        <button
+          id="btnPush"
+          type="button"
+          class="primary"
+        >
+          Push
+        </button>
+
+        <button
+          id="btnPull"
+          type="button"
+        >
+          Pull
+        </button>
+      </div>
+
+      <p
+        id="remoteMessage"
+        class="msg"
+        role="status"
+        hidden
+      ></p>
+    </div>
+    <h2>Collaborators</h2>
+    <div class="panel">
+      <p>
+        Owners and maintainers can manage repository members.
+      </p>
+
+      <div class="collaborator-form">
+        <label for="collaboratorUsername">
+          Username
+        </label>
+
+        <input
+          id="collaboratorUsername"
+          type="text"
+          placeholder="Enter an existing MiniVCS username"
+        >
+
+        <label for="collaboratorRole">
+          Role
+        </label>
+
+        <select id="collaboratorRole">
+          <option value="viewer">Viewer</option>
+          <option value="contributor">Contributor</option>
+          <option value="maintainer">Maintainer</option>
+        </select>
+
+        <button
+          id="btnAddCollaborator"
+          type="button"
+          class="primary"
+        >
+          Add collaborator
+        </button>
+      </div>
+
+      <p
+        id="collaboratorMessage"
+        class="msg"
+        role="status"
+        hidden
+      ></p>
+
+      <div id="collaboratorList">
+        Select a repository to view collaborators.
+      </div>
     </div>
   </main>
+
+  <script src="js/api.js"></script>
+  <script src="js/repositories.js"></script>
   <script src="js/app.js"></script>
+  <script src="js/repository-details.js"></script>
+  <script src="js/branches.js"></script>
+  <script src="js/merge.js"></script>
+  <script src="js/session.js"></script>
+  <script src="js/remote.js"></script>
+  <script src="js/collaborators.js?v=1"></script>
 </body>
 </html>

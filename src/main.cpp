@@ -17,10 +17,12 @@
 #include "DiffManager.h"
 #include "IntegrityManager.h"
 #include "branchmanager.h"
+#include "MergeManager.h"
 #include "RetentionManager.h"
 #include "member3.h"
-namespace {
+#include "RemoteManager.h"
 
+namespace {
 struct IgnoreRules {
     std::vector<std::string> builtIn;
     std::vector<std::string> userRules;
@@ -134,10 +136,39 @@ int main(int argc, char* argv[]) {
         std::cout<< "  minivcs branches\n";
         std::cout<< "  minivcs switch <name> [--force]\n";
         std::cout<< "  minivcs delete-branch <name>\n";
+        std::cout << "  minivcs merge <branch>\n";
+        std::cout << "  minivcs remote clone <remote-folder>\n";
+        std::cout << "  minivcs remote push <remote-folder>\n";
+        std::cout << "  minivcs remote pull <remote-folder>\n";
         return 0;
     }
 
     const std::string command = argv[1];
+
+    if (command == "help" || command == "--help" || command == "-h") {
+        std::cout << "MiniVCS - Mini Version Control System\n";
+        std::cout << "Commands:\n";
+        std::cout << "  minivcs auth\n";
+        std::cout << "  minivcs init [project-path]\n";
+        std::cout << "  minivcs add <file>\n";
+        std::cout << "  minivcs remove <file>\n";
+        std::cout << "  minivcs tracked\n";
+        std::cout << "  minivcs hash <file>\n";
+        std::cout << "  minivcs commit <message>\n";
+        std::cout << "  minivcs history\n";
+        std::cout << "  minivcs status\n";
+        std::cout << "  minivcs restore <commit-id|prefix> [--force]\n";
+        std::cout << "  minivcs show <commit-id|prefix>\n";
+        std::cout << "  minivcs diff [<commit>] [<commit>]\n";
+        std::cout << "  minivcs verify\n";
+        std::cout << "  minivcs retention "
+                    "[status|set <days>|cleanup [--dry-run]|log]\n";
+        std::cout << "  minivcs branch create <name>\n";
+        std::cout << "  minivcs branches\n";
+        std::cout << "  minivcs switch <name> [--force]\n";
+        std::cout << "  minivcs delete-branch <name>\n";
+        return 0;
+    }
 
     if (command == "init") {
         const std::filesystem::path projectPath =
@@ -330,8 +361,6 @@ if (command == "auth") {
     return 0;
 }
 
-// ===== Existing Repository Operations =====
-
    const auto discoveredRoot =
     Repository::discoverRoot(std::filesystem::current_path());
 
@@ -345,6 +374,57 @@ if (command == "auth") {
     Repository repository(*discoveredRoot);
 
     FileManager fileManager(repository.getRootPath());
+
+    if (command == "remote") {
+        if (argc != 4) {
+            std::cerr
+                << "Usage: minivcs remote "
+                << "<clone|push|pull> <remote-folder>\n";
+            return 1;
+        }
+
+        const std::string operation = argv[2];
+
+        const std::filesystem::path remotePath =
+            std::filesystem::path(argv[3]);
+
+        const std::filesystem::path localRemotePath =
+            repository.getRootPath();
+
+        RemoteManager remoteManager(
+            localRemotePath.string(),
+            remotePath.string()
+        );
+
+        SyncResult result;
+
+        if (operation == "clone") {
+            result = remoteManager.clone();
+        } else if (operation == "push") {
+            result = remoteManager.push();
+        } else if (operation == "pull") {
+            result = remoteManager.pull();
+        } else {
+            std::cerr
+                << "Unknown remote operation: "
+                << operation << '\n';
+            return 1;
+        }
+
+        std::cout << result.message << '\n';
+
+        if (result.conflicts > 0) {
+            std::cout
+                << "Conflicts: "
+                << result.conflicts << '\n';
+        }
+
+        std::cout
+            << "Files copied: "
+            << result.copied << '\n';
+
+        return result.ok ? 0 : 1;
+    }
     if (command == "commit") {
         if (argc < 3) {
             std::cerr << "Commit message cannot be empty.\n";
@@ -374,9 +454,7 @@ if (command == "auth") {
         CommitManager commitManager(repository.getRootPath());
 
         if (commitManager.createCommit(message)) {
-            std::cout << "Commit created successfully!\n";
-            std::cout << "Commit ID: "
-                    << commitManager.getLatestCommitId() << '\n';
+            // CommitManager already prints the success message and ID.
             return 0;
         }
 
@@ -907,12 +985,36 @@ if (command == "auth") {
 
         return 0;
     }
+    if (command == "merge") {
+        if (argc != 3) {
+            std::cerr << "Usage: minivcs merge <branch>\n";
+            return 1;
+        }
 
-    // ===== Member 3: user / login / permission commands =====
+        MergeManager mergeManager(repository.getRootPath());
+        const MergeResult result = mergeManager.mergeBranch(argv[2]);
 
-    // ===== Member 4: clone / push / pull commands =====
+        if (!result.message.empty()) {
+            if (result.success) {
+                std::cout << result.message << '\n';
+            } else {
+                std::cerr << result.message << '\n';
+            }
+        }
 
-    
+        if (result.hasConflicts) {
+            std::cerr << "Merge conflicts in "
+                      << result.conflicts.size() << " file(s):\n";
+            for (const auto& file : result.conflicts) {
+                std::cerr << "  CONFLICT: " << file << '\n';
+            }
+            std::cerr << "Resolve the conflict markers, then run "
+                         "'minivcs add <file>' and 'minivcs commit'.\n";
+        }
+
+        return result.success ? 0 : 1;
+    }
+
     std::cerr << "Unknown command: " << command << '\n';
     return 1;
 }

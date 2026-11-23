@@ -1,1 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MiniVCS</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="top">
+    <h1>MiniVCS</h1>
+    <nav class="tabs" aria-label="Screens">
+      <a class="tab active" href="index.html">Home</a>
+      <a class="tab" href="repositories.html">Repositories</a>
+      <a class="tab" href="history.html">History</a>
+      <a class="tab" href="retention.html">Retention</a>
+      <a class="tab" href="public-repositories.html">Explore</a>
+    </nav>
+  </header>
+  <main>
+    <h2>A lightweight version control system</h2>
+    <p class="hint">
+      MiniVCS tracks your files, saves snapshots, supports branches and
+      merging, and lets teams collaborate on shared repositories.
+    </p>
 
+    <div id="authBox" class="panel">
+      <p id="welcome">Create an account or sign in to start.</p>
+      <div class="btnrow">
+        <a class="tab primary" id="homeLogin" href="login.html">Login</a>
+        <a class="tab" id="homeRegister" href="register.html">Register</a>
+        <a class="tab primary" id="homeRepos" href="repositories.html" hidden>
+          Open my repositories
+        </a>
+      </div>
+    </div>
+
+    <h3>What you can do</h3>
+    <ul>
+      <li>Create public or private repositories.</li>
+      <li>Upload files, stage them and commit snapshots.</li>
+      <li>Create branches, switch between them and merge them.</li>
+      <li>Browse commit history and manage snapshot retention.</li>
+      <li>Invite collaborators with owner, maintainer, contributor or viewer roles.</li>
+    </ul>
+
+    <p id="apiStatus" class="hint">Checking server status...</p>
+  </main>
+  <script src="js/api.js"></script>
+  <script src="js/home.js"></script>
+</body>
+</html>

@@ -1,0 +1,596 @@
+#include "MergeManager.h"
+
+#include "Commit.h"
+#include "CommitManager.h"
+#include "branchmanager.h"
+#include "HashManager.h"
+
+#include <queue>
+#include <unordered_set>
+#include <utility>
+#include <optional>
+#include <unordered_map>
+#include <unordered_set>
+#include <fstream>
+
+MergeManager::MergeManager(
+    const std::filesystem::path& rootPath
+)
+    : repositoryRoot(rootPath) {
+}
+
+bool MergeManager::collectAncestors(
+    const std::string& commitId,
+    std::unordered_set<std::string>& ancestors
+) const {
+    if (commitId.empty()) {
+        return true;
+    }
+
+    if (!ancestors.insert(commitId).second) {
+        return true;
+    }
+
+    CommitManager commitManager(repositoryRoot);
+    Commit commit;
+
+    if (!commitManager.getCommit(commitId, commit)) {
+        return false;
+    }
+
+    if (!collectAncestors(commit.getFirstParentId(), ancestors)) {
+        return false;
+    }
+
+    if (!collectAncestors(commit.getSecondParentId(), ancestors)) {
+        return false;
+    }
+
+    return true;
+}
+
+std::optional<std::string> MergeManager::findCommonAncestor(
+    const std::string& ours,
+    const std::string& theirs
+) const {
+    std::unordered_set<std::string> oursAncestors;
+
+    if (!collectAncestors(ours, oursAncestors)) {
+        return std::nullopt;
+    }
+
+    CommitManager commitManager(repositoryRoot);
+
+    std::queue<std::string> pending;
+    std::unordered_set<std::string> visited;
+
+    pending.push(theirs);
+
+    while (!pending.empty()) {
+        const std::string current = pending.front();
+        pending.pop();
+
+        if (current.empty()) {
+            continue;
+        }
+
+        if (!visited.insert(current).second) {
+            continue;
+        }
+
+        if (oursAncestors.find(current) != oursAncestors.end()) {
+            return current;
+        }
+
+        Commit commit;
+
+        if (!commitManager.getCommit(current, commit)) {
+            return std::nullopt;
+        }
+
+        if (!commit.getFirstParentId().empty()) {
+            pending.push(commit.getFirstParentId());
+        }
+
+        if (!commit.getSecondParentId().empty()) {
+            pending.push(commit.getSecondParentId());
+        }
+    }
+
+    return std::nullopt;
+}
+bool MergeManager::buildThreeWayMerge(
+    const Commit& base,
+    const Commit& ours,
+    const Commit& theirs,
+    std::unordered_map<std::string, std::string>& mergedHashes,
+    std::vector<std::string>& conflicts
+) const {
+    mergedHashes.clear();
+    conflicts.clear();
+
+    std::unordered_set<std::string> paths;
+
+    for (const auto& entry : base.getFileHashes()) {
+        paths.insert(entry.first);
+    }
+
+    for (const auto& entry : ours.getFileHashes()) {
+        paths.insert(entry.first);
+    }
+
+    for (const auto& entry : theirs.getFileHashes()) {
+        paths.insert(entry.first);
+    }
+
+    for (const std::string& path : paths) {
+        const auto baseIt = base.getFileHashes().find(path);
+        const auto oursIt = ours.getFileHashes().find(path);
+        const auto theirsIt = theirs.getFileHashes().find(path);
+
+        const bool baseExists = baseIt != base.getFileHashes().end();
+        const bool oursExists = oursIt != ours.getFileHashes().end();
+        const bool theirsExists = theirsIt != theirs.getFileHashes().end();
+
+        const std::string baseHash =
+            baseExists ? baseIt->second : "";
+
+        const std::string oursHash =
+            oursExists ? oursIt->second : "";
+
+        const std::string theirsHash =
+            theirsExists ? theirsIt->second : "";
+
+        // Both branches have exactly the same state.
+        if (oursExists == theirsExists &&
+            oursHash == theirsHash) {
+            if (oursExists) {
+                mergedHashes[path] = oursHash;
+            }
+            continue;
+        }
+
+        // Only theirs changed from the base.
+        if (oursExists == baseExists &&
+            oursHash == baseHash) {
+            if (theirsExists) {
+                mergedHashes[path] = theirsHash;
+            }
+            continue;
+        }
+
+        // Only ours changed from the base.
+        if (theirsExists == baseExists &&
+            theirsHash == baseHash) {
+            if (oursExists) {
+                mergedHashes[path] = oursHash;
+            }
+            continue;
+        }
+
+        // Both branches changed the path differently.
+        conflicts.push_back(path);
+    }
+
+    return conflicts.empty();
+}
+bool MergeManager::applyMergedFilesToWorkingTree(
+    const Commit& ours,
+    const Commit& theirs,
+    const std::unordered_map<std::string, std::string>& mergedHashes,
+    std::string& errorMessage
+) const {
+    namespace fs = std::filesystem;
+
+    CommitManager commitManager(repositoryRoot);
+
+    const fs::path oursSnapshot =
+        commitManager.getSnapshotPath(ours.getId());
+    const fs::path theirsSnapshot =
+        commitManager.getSnapshotPath(theirs.getId());
+
+    struct Action {
+        fs::path relative;
+        fs::path source;   // empty means "delete from working tree"
+    };
+
+    std::vector<Action> actions;
+
+    auto safeRelative = [](const std::string& value, fs::path& out) {
+        out = fs::path(value).lexically_normal();
+        return !(out.empty() || out.is_absolute() || out == "." ||
+                 out.string().find("..") != std::string::npos);
+    };
+
+    // Files that must be written because the merged result differs from ours.
+    for (const auto& entry : mergedHashes) {
+        const auto oursIt = ours.getFileHashes().find(entry.first);
+
+        if (oursIt != ours.getFileHashes().end() &&
+            oursIt->second == entry.second) {
+            continue;  // working tree already matches our side
+        }
+
+        fs::path relative;
+        if (!safeRelative(entry.first, relative)) {
+            errorMessage = "Unsafe path in merge result: " + entry.first;
+            return false;
+        }
+
+        actions.push_back({relative, theirsSnapshot / relative});
+    }
+
+    // Files deleted by the other branch.
+    for (const auto& entry : ours.getFileHashes()) {
+        if (mergedHashes.find(entry.first) != mergedHashes.end()) {
+            continue;
+        }
+
+        fs::path relative;
+        if (!safeRelative(entry.first, relative)) {
+            errorMessage = "Unsafe path in merge result: " + entry.first;
+            return false;
+        }
+
+        actions.push_back({relative, fs::path()});
+    }
+
+    // Refuse to overwrite uncommitted local edits. A file is safe to replace
+    // when it matches our committed version, or already equals the merged
+    // content (for example, a file left behind by an earlier branch switch).
+    for (const auto& action : actions) {
+        const fs::path target = repositoryRoot / action.relative;
+        const std::string key = action.relative.generic_string();
+        std::error_code ec;
+
+        if (!fs::exists(target, ec)) {
+            continue;
+        }
+
+        std::string currentHash;
+        if (!HashManager::tryCalculateHash(target, currentHash)) {
+            errorMessage = "Could not read working file: " + key;
+            return false;
+        }
+
+        const auto oursIt = ours.getFileHashes().find(key);
+        const auto mergedIt = mergedHashes.find(key);
+
+        const bool matchesOurs =
+            oursIt != ours.getFileHashes().end() &&
+            currentHash == oursIt->second;
+
+        const bool matchesMerged =
+            mergedIt != mergedHashes.end() &&
+            currentHash == mergedIt->second;
+
+        if (!matchesOurs && !matchesMerged) {
+            errorMessage =
+                "Local changes in '" + key +
+                "' would be overwritten by the merge. "
+                "Commit or restore them first.";
+            return false;
+        }
+    }
+
+    for (const auto& action : actions) {
+        const fs::path target = repositoryRoot / action.relative;
+        std::error_code ec;
+
+        if (action.source.empty()) {
+            fs::remove(target, ec);
+            if (ec) {
+                errorMessage = "Could not remove file: " +
+                               action.relative.generic_string();
+                return false;
+            }
+            continue;
+        }
+
+        fs::create_directories(target.parent_path(), ec);
+        if (ec) {
+            errorMessage = "Could not create directory for: " +
+                           action.relative.generic_string();
+            return false;
+        }
+
+        fs::copy_file(
+            action.source,
+            target,
+            fs::copy_options::overwrite_existing,
+            ec
+        );
+
+        if (ec) {
+            errorMessage = "Could not write merged file: " +
+                           action.relative.generic_string();
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool MergeManager::materializeConflictMarkers(
+    const Commit& ours,
+    const Commit& theirs,
+    const std::vector<std::string>& conflicts
+) const {
+    namespace fs = std::filesystem;
+
+    CommitManager commitManager(repositoryRoot);
+
+    const fs::path oursSnapshot =
+        commitManager.getSnapshotPath(ours.getId());
+
+    const fs::path theirsSnapshot =
+        commitManager.getSnapshotPath(theirs.getId());
+
+    auto readSnapshotFile =
+        [](const fs::path& snapshotRoot,
+           const std::string& relativePath,
+           std::string& contents) -> bool {
+            const fs::path path =
+                snapshotRoot / fs::path(relativePath);
+
+            std::error_code ec;
+
+            if (!fs::exists(path, ec)) {
+                if (ec) {
+                    return false;
+                }
+
+                contents =
+                    "[file deleted on this branch]\n";
+                return true;
+            }
+
+            if (!fs::is_regular_file(path, ec) || ec) {
+                return false;
+            }
+
+            std::ifstream input(path, std::ios::binary);
+
+            if (!input) {
+                return false;
+            }
+
+            contents.assign(
+                std::istreambuf_iterator<char>(input),
+                std::istreambuf_iterator<char>()
+            );
+
+            return true;
+        };
+
+    for (const auto& relativePath : conflicts) {
+        const fs::path relative =
+            fs::path(relativePath).lexically_normal();
+
+        if (relative.empty() ||
+            relative.is_absolute() ||
+            relative == "." ||
+            relative.string().find("..") != std::string::npos) {
+            return false;
+        }
+
+        std::string oursContents;
+        std::string theirsContents;
+
+        if (!readSnapshotFile(
+                oursSnapshot,
+                relativePath,
+                oursContents
+            )) {
+            return false;
+        }
+
+        if (!readSnapshotFile(
+                theirsSnapshot,
+                relativePath,
+                theirsContents
+            )) {
+            return false;
+        }
+
+        const fs::path destination =
+            repositoryRoot / relative;
+
+        std::error_code ec;
+
+        fs::create_directories(
+            destination.parent_path(),
+            ec
+        );
+
+        if (ec) {
+            return false;
+        }
+
+        std::ofstream output(
+            destination,
+            std::ios::out | std::ios::trunc
+        );
+
+        if (!output) {
+            return false;
+        }
+
+        output << "<<<<<<< ours\n";
+        output << oursContents;
+
+        if (!oursContents.empty() &&
+            oursContents.back() != '\n') {
+            output << '\n';
+        }
+
+        output << "=======\n";
+        output << theirsContents;
+
+        if (!theirsContents.empty() &&
+            theirsContents.back() != '\n') {
+            output << '\n';
+        }
+
+        output << ">>>>>>> theirs\n";
+        output.close();
+
+        if (!output) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+MergeResult MergeManager::mergeBranch(
+    const std::string& sourceBranch
+) {
+    MergeResult result;
+
+    BranchManager branchManager(repositoryRoot);
+    CommitManager commitManager(repositoryRoot);
+
+    const std::string currentBranch =
+        branchManager.getCurrentBranch();
+
+    const std::string oursId =
+        branchManager.getCurrentCommit();
+
+    const std::string theirsId =
+        branchManager.getBranchCommit(sourceBranch);
+
+    if (currentBranch.empty() || oursId.empty()) {
+        result.message =
+            "Could not determine the current branch or commit.";
+        return result;
+    }
+
+    if (sourceBranch.empty() ||
+        !branchManager.branchExists(sourceBranch)) {
+        result.message =
+            "Source branch does not exist: " + sourceBranch;
+        return result;
+    }
+
+    if (theirsId.empty()) {
+        result.message =
+            "Source branch has no commit.";
+        return result;
+    }
+
+    if (oursId == theirsId) {
+        result.success = true;
+        result.message =
+            "Branches already point to the same commit.";
+        return result;
+    }
+
+    const std::optional<std::string> ancestorId =
+        findCommonAncestor(oursId, theirsId);
+
+    if (!ancestorId.has_value()) {
+        result.message =
+            "No common ancestor found; merge cannot continue.";
+        return result;
+    }
+
+    Commit base;
+    Commit ours;
+    Commit theirs;
+
+    if (!commitManager.getCommit(*ancestorId, base) ||
+        !commitManager.getCommit(oursId, ours) ||
+        !commitManager.getCommit(theirsId, theirs)) {
+        result.message =
+            "Could not load merge commit metadata.";
+        return result;
+    }
+
+    std::unordered_map<std::string, std::string> mergedHashes;
+
+    if (!buildThreeWayMerge(
+            base,
+            ours,
+            theirs,
+            mergedHashes,
+            result.conflicts)) {
+        result.success = false;
+        result.hasConflicts = true;
+
+        if (!materializeConflictMarkers(
+                ours,
+                theirs,
+                result.conflicts
+            )) {
+            result.message =
+                "Conflicts detected, but conflict markers "
+                "could not be written.";
+        } else {
+            result.message =
+                "Merge stopped because file conflicts were "
+                "detected. Conflict markers were written.";
+        }
+
+        return result;
+    }
+
+    if (mergedHashes.empty()) {
+        result.message =
+            "Merge produced no files.";
+        return result;
+    }
+
+    std::string applyError;
+
+    if (!applyMergedFilesToWorkingTree(
+            ours,
+            theirs,
+            mergedHashes,
+            applyError
+        )) {
+        result.message = applyError;
+        return result;
+    }
+
+    std::string mergeCommitId;
+
+    const std::string authorId =
+        ours.getAuthorId().empty()
+            ? "merge"
+            : ours.getAuthorId();
+
+    const bool created =
+        commitManager.createMergeCommit(
+            "Merge branch '" + sourceBranch + "'",
+            authorId,
+            oursId,
+            theirsId,
+            mergedHashes,
+            mergeCommitId
+        );
+
+    if (!created) {
+        result.message =
+            "Could not create the merge commit.";
+        return result;
+    }
+
+    if (!branchManager.getCurrentBranch().empty() &&
+        !commitManager.updateBranchPointer(
+            currentBranch,
+            mergeCommitId
+        )) {
+        result.message =
+            "Merge commit was created, but branch pointer update failed.";
+        return result;
+    }
+
+    result.success = true;
+    result.hasConflicts = false;
+    result.message =
+        "Merge completed successfully. Created commit " +
+        mergeCommitId + ".";
+
+    return result;
+}

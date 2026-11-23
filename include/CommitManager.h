@@ -22,6 +22,15 @@ private:
 
     bool readCommitFile(const std::string& commitId, Commit& out) const;
 
+    bool createCommitObject(
+        const std::string& message,
+        const std::string& authorId,
+        const std::string& firstParentId,
+        const std::string& secondParentId,
+        const std::unordered_map<std::string, std::string>& hashes,
+        std::string& createdCommitId
+    );
+
     std::vector<std::string> findOverwriteConflicts(
         const std::vector<std::string>& paths,
         const std::unordered_map<std::string, std::string>& hashes
@@ -33,6 +42,15 @@ public:
     );
 
     bool createCommit(const std::string& message);
+
+    bool createMergeCommit(
+        const std::string& message,
+        const std::string& authorId,
+        const std::string& firstParentId,
+        const std::string& secondParentId,
+        const std::unordered_map<std::string, std::string>& hashes,
+        std::string& createdCommitId
+    );
 
     HistoryResult readCommitHistory() const;
 
@@ -70,6 +88,7 @@ public:
     bool isSnapshotPruned(const std::string& commitId) const;
 
     std::vector<std::string> getBranchTips() const;
+
 };
 
 #endif

@@ -12,10 +12,16 @@ using namespace std;
 static vector<string> listFiles(const string& dir) {
     vector<string> out;
     if (!fs::exists(dir)) return out;
-    for (auto& e : fs::directory_iterator(dir)) {
+    fs::path root(dir);
+    for (auto& e : fs::recursive_directory_iterator(root)) {
         if (!e.is_regular_file()) continue;
-        string n = e.path().filename().string();
-        if (!n.empty() && n[0] != '.') out.push_back(n);   
+        fs::path rel = fs::relative(e.path(), root);
+        bool hidden = false;
+        for (auto& part : rel) {
+            string s = part.string();
+            if (!s.empty() && s[0] == '.') { hidden = true; break; }
+        }
+        if (!hidden) out.push_back(rel.generic_string());
     }
     return out;
 }
@@ -48,11 +54,12 @@ SyncResult RemoteManager::copyMissing(const string& from, const string& to, cons
     for (auto& name : listFiles(from)) {
         fs::path src = fs::path(from) / name, dst = fs::path(to) / name;
         if (!fs::exists(dst)) {
+            fs::create_directories(dst.parent_path());  
             fs::copy_file(src, dst);
-            fs::last_write_time(dst, fs::last_write_time(src));  
+            fs::last_write_time(dst, fs::last_write_time(src));
             r.copied++;
         } else if (!sameContent(src, dst)) {
-            r.conflicts++;                                         
+            r.conflicts++;                               
         }
     }
     r.message = string(verb) + " " + to_string(r.copied) + " snapshot(s)";
