@@ -746,61 +746,112 @@ bool CommitManager::readCommitFile(const std::string& commitId,
         return false;
     }
 
-    std::string storedId;
-    std::string message;
-    std::string timestamp;
-    std::string authorId;
-    std::string firstParentId;
-    std::string secondParentId;
-    std::size_t fileCount = 0;
+    std::ostringstream buffer;
+    buffer << commitFile.rdbuf();
+    const std::string content = buffer.str();
 
-    if (!(commitFile
-            >> std::quoted(storedId)
-            >> std::quoted(message)
-            >> std::quoted(timestamp)
-            >> std::quoted(authorId)
-            >> std::quoted(firstParentId)
-            >> std::quoted(secondParentId)
-            >> fileCount) ||
-        storedId != commitId) {
-        return false;
-    }
+    // Parses the file's remaining entries: <count> then <count> pairs.
+    auto readFiles = [&](std::istringstream& input,
+                         std::size_t fileCount,
+                         std::unordered_map<std::string, std::string>& hashes) {
+        for (std::size_t i = 0; i < fileCount; ++i) {
+            std::string path, hash;
 
+            if (!(input >> std::quoted(path) >> std::quoted(hash))) {
+                return false;
+            }
 
-    std::unordered_map<std::string, std::string> hashes;
+            hashes[path] = hash;
+        }
 
-    for (std::size_t i = 0; i < fileCount; ++i) {
-        std::string path, hash;
-
-        if (!(commitFile >> std::quoted(path) >> std::quoted(hash))) {
+        if (hashes.size() != fileCount) {
             return false;
         }
 
-        hashes[path] = hash;
+        std::string unexpectedData;
+
+        if (input >> unexpectedData) {
+            return false;
+        }
+
+        return true;
+    };
+
+    // Current format:
+    //   id, message, timestamp, author, firstParent, secondParent, count, files
+    {
+        std::istringstream input(content);
+        std::string storedId;
+        std::string message;
+        std::string timestamp;
+        std::string authorId;
+        std::string firstParentId;
+        std::string secondParentId;
+        std::size_t fileCount = 0;
+
+        if (input
+                >> std::quoted(storedId)
+                >> std::quoted(message)
+                >> std::quoted(timestamp)
+                >> std::quoted(authorId)
+                >> std::quoted(firstParentId)
+                >> std::quoted(secondParentId)
+                >> fileCount &&
+            storedId == commitId) {
+            std::unordered_map<std::string, std::string> hashes;
+
+            if (readFiles(input, fileCount, hashes)) {
+                out = Commit(
+                    storedId,
+                    message,
+                    timestamp,
+                    authorId,
+                    firstParentId,
+                    secondParentId,
+                    hashes
+                );
+                return true;
+            }
+        }
     }
 
-        if (hashes.size() != fileCount) {
-        return false;
+    // Legacy format written by earlier versions of MiniVCS:
+    //   id, message, timestamp, parent, count, files
+    {
+        std::istringstream input(content);
+        std::string storedId;
+        std::string message;
+        std::string timestamp;
+        std::string parentId;
+        std::size_t fileCount = 0;
+
+        if (!(input
+                >> std::quoted(storedId)
+                >> std::quoted(message)
+                >> std::quoted(timestamp)
+                >> std::quoted(parentId)
+                >> fileCount) ||
+            storedId != commitId) {
+            return false;
+        }
+
+        std::unordered_map<std::string, std::string> hashes;
+
+        if (!readFiles(input, fileCount, hashes)) {
+            return false;
+        }
+
+        out = Commit(
+            storedId,
+            message,
+            timestamp,
+            "",
+            parentId,
+            "",
+            hashes
+        );
+        return true;
     }
-
-    std::string unexpectedData;
-
-    if (commitFile >> unexpectedData) {
-        return false;
-    }
-
-    out = Commit(
-        storedId,
-        message,
-        timestamp,
-        authorId,
-        firstParentId,
-        secondParentId,
-        hashes
-    );
-
-
-    return true;
 }
 
 HistoryResult CommitManager::readCommitHistory() const {

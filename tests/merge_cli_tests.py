@@ -142,6 +142,36 @@ def test_local_edits_are_protected():
     shutil.rmtree(root, ignore_errors=True)
 
 
+def test_legacy_commit_format_is_readable():
+    import glob
+
+    root = new_repo()
+    write(root, "a.txt", "1\n")
+    track_and_commit(root, "one", "a.txt")
+    write(root, "b.txt", "2\n")
+    track_and_commit(root, "two", "b.txt")
+
+    # Rewrite commits into the older format written by early MiniVCS builds:
+    # id, message, date, parent, count, files  (no author / second parent).
+    for path in glob.glob(os.path.join(root, ".minivcs", "objects", "*", "commit.txt")):
+        with open(path) as handle:
+            lines = handle.read().split("\n")
+        legacy = lines[0:3] + [lines[4]] + lines[6:]
+        with open(path, "w", newline="\n") as handle:
+            handle.write("\n".join(legacy))
+
+    history = run(root, "history")
+    check("legacy-format history is readable",
+          history.returncode == 0 and "Message: one" in history.stdout
+          and "Message: two" in history.stdout, history.stderr + history.stdout)
+    write(root, "c.txt", "3\n")
+    add = run(root, "add", "c.txt")
+    commit = run(root, "commit", "three")
+    check("new commit works on top of legacy history",
+          add.returncode == 0 and commit.returncode == 0, commit.stderr)
+    shutil.rmtree(root, ignore_errors=True)
+
+
 def test_bad_arguments():
     root = new_repo()
     write(root, "a.txt", "x\n")
@@ -161,6 +191,7 @@ if __name__ == "__main__":
         test_clean_merge_updates_working_tree,
         test_conflict_writes_markers_and_fails,
         test_local_edits_are_protected,
+        test_legacy_commit_format_is_readable,
         test_bad_arguments,
     ):
         print(test.__name__)
